@@ -128,6 +128,7 @@ party_colors <- tibble(
   party_grouped = c("Democrat", "Republican", "Other")
 )
 
+# Total number of Female Politicians holding office by Level
 wp_selected %>%
   # Select our variables to analyze
   select(id, level, party_grouped) %>%
@@ -140,10 +141,10 @@ wp_selected %>%
   # Bring our colors back in
   left_join(party_colors, by = c("party_grouped", "party_grouped")) %>%
   # Start our visualization, creating our groups by party affiliation
-  ggplot(aes(x = reorder(party_grouped, num), y = num)) +
-  geom_col(aes(fill = party_grouped)) +
+  ggplot(aes(x = reorder(party_grouped, num), y = num, fill = party_grouped)) +
+  geom_col() +
   # Change our color scales
-  scale_color_manual(values = c("blue", "red", "gray")) +
+  scale_fill_manual(name = "Party", values = c("#2E74C0", "#999999", "#CB454A")) +
   # Create a separate chart, with a flexible y-axis, for each level of office
   facet_wrap(~level, scales = "free_y") +
   # Change the theme to classic
@@ -153,8 +154,52 @@ wp_selected %>%
     ylab("Number of Female Politicians") +
     labs(title = "Number of Female Politicians at Various\nLevels of Government",
          subtitle = paste("Data ranges from", min(wp_selected$year), "to", max(wp_selected$year)),
-         caption = "Data is gathered from the Washington Post at\nhttps://github.com/washingtonpost/data-police-shootings") +
+         caption = "Data is gathered from the Eagleton Institute of Politics,\nCenter for American Women in Politics at\nhttps://cawpdata.rutgers.edu/") +
     # format our title and subtitle
     theme(plot.title = element_text(hjust = 0, color = "slateblue4"),
           plot.subtitle = element_text(hjust = 0, color = "slateblue2", size = 10),
           plot.caption = element_text(color = "dark gray", size = 10, face = "italic"))
+
+
+# Quite clearly, most of the women who have held office have done so at the state legislative
+# level. Interestingly enough, most of the women who have held office at the state
+# legislative or Federal/Congress level have been members of the two major parties.
+# In D.C., a lot of women outside the two major parties have won office.
+
+
+# Let's break out these numbers of Female Politicians holding office over time
+wp_selected %>%
+  # Select our variables to analyze
+  select(id, level, party_grouped, year) %>%
+  # Pull only distinct values
+  distinct() %>%
+  # Group by level and political party
+  group_by(year, level, party_grouped) %>%
+  # Count everything up!
+  summarise(num = n()) %>%
+  # Bring our colors back in
+  left_join(party_colors, by = c("party_grouped", "party_grouped")) %>%
+  # Because it'll skew the data, let's get rid of anything from the current
+  # year or later
+  filter(year < year(Sys.Date())) %>%
+  # Start our visualization, creating our groups by party affiliation
+  ggplot(aes(x = year, y = num, color = party_grouped)) +
+  geom_line(lwd = 2) +
+  # Change our color scales
+  scale_color_manual(name = "Party", values = c("#2E74C0", "#999999", "#CB454A")) +
+  # Create a separate chart, with a flexible y-axis, for each level of office
+  facet_wrap(~level, scales = "free_y") +
+  # Change the theme to classic
+  theme_classic() +
+  # Let's change the names of the axes and title
+  xlab("Year") +
+  ylab("Number of Female Politicians") +
+  labs(title = "Number of Female Politicians at Various\nLevels of Government over Time",
+       subtitle = paste("Data ranges from", min(wp_selected$year), "to", max(wp_selected$year)),
+       caption = "Data is gathered from the Eagleton Institute of Politics,\nCenter for American Women in Politics at\nhttps://cawpdata.rutgers.edu/") +
+  # format our title and subtitle
+  theme(plot.title = element_text(hjust = 0, color = "slateblue4"),
+        plot.subtitle = element_text(hjust = 0, color = "slateblue2", size = 10),
+        plot.caption = element_text(color = "dark gray", size = 10, face = "italic"))
+
+
