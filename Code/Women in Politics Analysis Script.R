@@ -61,16 +61,48 @@ wp_cleaned <- women_politics_data %>%
   ) %>%
   print()
 
+# Our dataset is structured such that each row corresponds to one year that
+# a woman held elected office. Let's create two new variables:
+#   min_year: the first year the woman held office
+#   max_year: the last year the woman held office
+wp_minmax <- wp_cleaned %>%
+  group_by(id) %>%
+  mutate(min_year = min(year),
+         max_year = max(year),
+         years_of_service = paste(min(year), max(year), sep = "-")) %>%
+  # filter(year == min(year) |
+  #          year == max(year)) %>%
+  select(id, contains("year"), contains("name"), everything()) %>%
+  print()
+
 
 ########################################################################
 ## Explore NAs ---------------------------------------------------------
 ########################################################################
-missing_vals <- wp_cleaned %>%
-  # gather(key = "key", value = "val") %>%
-  pivot_longer(
-    cols = wp_cleaned[, 1]:wp_cleaned[, length(wp_cleaned)],
-    names_to = "variable",
-    values_to = "value")
+# Start by creating a dataframe that will store our missing values
+missing_vals <- wp_minmax %>%
+  # Pivot the dataset so all of our variables are in two columns
+  gather(key = "key", value = "val") %>%
+  # Figure out which values are missing
+  mutate(is_missing = is.na(val)) %>%
+  # Group by our variable and whether or not a value is missing
+  group_by(key, is_missing) %>%
+  # Count the number of values missing for each variable
+  summarise(num_missing = n()) %>%
+  # Only pull in the variables that are missing
+  filter(is_missing == T) %>%
+  # Get rid of our logical field
+  select(-is_missing) %>%
+  # Sort our values descending
+  arrange(desc(num_missing)) %>%
+  # Ungroup our results
+  ungroup()
 
+# Let's take a look at our results
+pander(missing_vals)
+# The district column, at least for now, is all NAs, so let's remove it.
+# Middle name, which is about 1/3 null, is fine since that's not an essential
+# variable
 
-# The district column, at least for now, is all NAs, so let's remove it
+wp_selected <- wp_minmax %>%
+  select(-district)
