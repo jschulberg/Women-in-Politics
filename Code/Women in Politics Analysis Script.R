@@ -28,17 +28,17 @@ suppressMessages(library("janitor")) # Used for data cleaning
 
 
 # Bring in the data, taking advantage of the project structure
-women_politics_data <- readr::read_csv(here::here("Data/women_in_politics.csv"))
+female_politicians_data <- readr::read_csv(here::here("Data/women_in_politics.csv"))
 
 # Convert to a tibble, my preferred data structure
-(women_politics_data <- as_tibble(women_politics_data))
+(female_politicians_data <- as_tibble(female_politicians_data))
 
 
 ########################################################################
 ## Clean Data ----------------------------------------------------------
 ########################################################################
 # Some of the data is a bit messy, so let's clean things up
-wp_cleaned <- women_politics_data %>%
+wp_cleaned <- female_politicians_data %>%
   # Clean up our column names so they're in a more standard format
   clean_names() %>%
   # Create and clean up a few columns
@@ -56,9 +56,17 @@ wp_cleaned <- women_politics_data %>%
     state_abb = if_else(state == "Northern Mariana Islands", "NMI", state_abb),
     # Create a full name field
     full_name = if_else(is.na(middle_name),
-                        paste(first_name, last_name),
-                        paste(first_name, middle_name, last_name))
+                        str_c(first_name, last_name, sep = " "),
+                        str_c(first_name, middle_name, last_name, sep = " ")),
+    # There are a lot of small political parties (outside of Dem/Repub) that
+    # appear in the dataset, so let's create a grouped column
+    party_grouped = case_when(
+      party == "Democrat" ~ "Democrat",
+      party == "Republican" ~ "Republican",
+      TRUE ~ "Other")
   ) %>%
+  # Reorder columns to see the result
+  select(id, contains("name"), contains("state"), everything()) %>%
   print()
 
 # Our dataset is structured such that each row corresponds to one year that
@@ -69,10 +77,10 @@ wp_minmax <- wp_cleaned %>%
   group_by(id) %>%
   mutate(min_year = min(year),
          max_year = max(year),
-         years_of_service = paste(min(year), max(year), sep = "-")) %>%
-  # filter(year == min(year) |
-  #          year == max(year)) %>%
+         years_of_service = str_c(min(year), max(year), sep = "-")) %>%
+  # Reorder columns to see the result
   select(id, contains("year"), contains("name"), everything()) %>%
+  ungroup() %>%
   print()
 
 
@@ -106,3 +114,47 @@ pander(missing_vals)
 
 wp_selected <- wp_minmax %>%
   select(-district)
+
+# Now that we have our data, let's start to explore it using some fancy
+# visualizations
+
+########################################################################
+## Viz Time ------------------------------------------------------------
+########################################################################
+# Before we jump into visualizations, let's define our political party
+# colors
+party_colors <- tibble(
+  party_colors = c("#2E74C0", "#CB454A", "#999999"),
+  party_grouped = c("Democrat", "Republican", "Other")
+)
+
+wp_selected %>%
+  # Select our variables to analyze
+  select(id, level, party_grouped) %>%
+  # Pull only distinct values
+  distinct() %>%
+  # Group by level and political party
+  group_by(level, party_grouped) %>%
+  # Count everything up!
+  summarise(num = n()) %>%
+  # Bring our colors back in
+  left_join(party_colors, by = c("party_grouped", "party_grouped")) %>%
+  # Start our visualization, creating our groups by party affiliation
+  ggplot(aes(x = reorder(party_grouped, num), y = num)) +
+  geom_col(aes(fill = party_grouped)) +
+  # Change our color scales
+  scale_color_manual(values = c("blue", "red", "gray")) +
+  # Create a separate chart, with a flexible y-axis, for each level of office
+  facet_wrap(~level, scales = "free_y") +
+  # Change the theme to classic
+  theme_classic() +
+  # Let's change the names of the axes and title
+    xlab("Party") +
+    ylab("Number of Female Politicians") +
+    labs(title = "Number of Female Politicians at Various\nLevels of Government",
+         subtitle = paste("Data ranges from", min(wp_selected$year), "to", max(wp_selected$year)),
+         caption = "Data is gathered from the Washington Post at\nhttps://github.com/washingtonpost/data-police-shootings") +
+    # format our title and subtitle
+    theme(plot.title = element_text(hjust = 0, color = "slateblue4"),
+          plot.subtitle = element_text(hjust = 0, color = "slateblue2", size = 10),
+          plot.caption = element_text(color = "dark gray", size = 10, face = "italic"))
