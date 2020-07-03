@@ -202,4 +202,13 @@ wp_selected %>%
         plot.subtitle = element_text(hjust = 0, color = "slateblue2", size = 10),
         plot.caption = element_text(color = "dark gray", size = 10, face = "italic"))
 
+# Here are some key takeaways:
+#   1. The number of women holding elected office has been growing incredibly
+#      fast over the past few decades
+#   2. For female politicians in Congress, Democrats and Repulicans held
+#      lock-step until 1990, when Democrats took off at a much faster rate
+#   3. Most of the positions held are at the State Legislative level, which
+#      makes sense given the higher number of positions open at that level.
+
+
 
