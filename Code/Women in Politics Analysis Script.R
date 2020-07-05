@@ -588,3 +588,69 @@ ggsave(here::here("Viz", "Congress_ARIMA_Viz.jpg"))
 # as women in Congress hit a certain threshold. Assuming the rate of increase
 # is generally linear, the Senate will achieve full parity almost 50 years
 # before the House.
+
+
+
+########################################################################
+## Geographic Analysis -------------------------------------------------
+########################################################################
+# Next, we'll look into how the number of women holding certain elected
+# office varies based on location (state). This will help us understand
+# if there are certain areas of the country where women holding office
+# are taking off, and others where it's lagging.
+
+# First, let's take a look at our all-time leaders. Which states have had
+# the most women representatives/executives in the past 120 years?
+(Women_in_Office_by_State <- wp_selected %>%
+   # Get rid of D.C. for now
+   filter(level != "Territorial/D.C.") %>%
+   # Select our variables to analyze
+   select(id, level, state) %>%
+   # Group by level and state
+   group_by(level, state) %>%
+   # Count everything up!
+   summarise(num = n()) %>%
+   # Pick our top 10
+   top_n(10, num) %>%
+   # Rearrange our dataset
+   arrange(level, desc(num)) %>%
+   # Start our visualization, creating our groups by party affiliation
+   ggplot(aes(x = num, y = factor(num))) +
+   geom_bar(stat = "identity", fill = "slateblue", na.rm = T) +
+   # Create a separate chart, with a flexible y-axis, for each level of office
+   facet_wrap(~level, scales = "free_y") +
+   # Add a label by recreating our data build from earlier
+   geom_label(data = wp_selected %>%
+                # Get rid of D.C. for now
+                filter(level != "Territorial/D.C.") %>%
+                # Select our variables to analyze
+                select(id, level, state_abb) %>%
+                # Group by level and state
+                group_by(level, state_abb) %>%
+                # Count everything up!
+                summarise(num = n()) %>%
+                # Pick our top 10
+                top_n(10, num) %>%
+                # Rearrange our dataset
+                arrange(level, desc(num)),
+              aes(label = paste(state_abb, num, sep = "-")),
+              size = 3,
+              # Scooch the labels over a smidge
+              hjust = .25) +
+   # Change the theme to classic
+   theme_classic() +
+   # Let's change the names of the axes and title
+   xlab("Party") +
+   ylab("Number of Female Politicians") +
+   labs(title = "Number of Female Politicians at Various\nLevels of Government",
+        subtitle = paste("Data ranges from", min(wp_selected$year), "to", max(wp_selected$year)),
+        caption = "Data is gathered from the Eagleton Institute of Politics,\nCenter for American Women in Politics at\nhttps://cawpdata.rutgers.edu/") +
+   # format our title and subtitle
+   theme(plot.title = element_text(hjust = 0, color = "slateblue4"),
+         plot.subtitle = element_text(hjust = 0, color = "slateblue2", size = 10),
+         plot.caption = element_text(color = "dark gray", size = 10, face = "italic"),
+         axis.text.y = element_blank(),
+         axis.ticks.y = element_blank())
+)
+ggsave(here::here("Viz", "Women_in_Office_by_State.jpg"))
+
