@@ -1,4 +1,4 @@
-# Women-in-Politics
+# Women in Politics Analysis
 This repository includes a thorough analysis of women who have held elected office since the turn of the 20th Century. I will use a variety of exploratory and modeling techniques to answer the following questions:  
 
 - How many women have held elected office over time?
