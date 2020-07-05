@@ -396,8 +396,15 @@ senate_future <- senate_full %>%
 
 
 # Let's plot our data
-ggplot(senate_future, aes(x = date, y = politicians, color = period)) +
+ggplot(senate_future, aes(x = year, y = politicians, color = period)) +
   geom_line(lwd = 2) +
+  # Add a reference line for when we achieve full parity
+  geom_vline(xintercept = senate_parity,
+             color = "slateblue1",
+             linetype = "dashed") +
+  geom_hline(yintercept = 50,
+             color = "slateblue1",
+             linetype = "dashed") +
   # Change the theme to classic
   theme_classic() +
   # Change the colors we're working with
@@ -480,8 +487,15 @@ house_future <- house_full %>%
 
 
 # Let's plot our data
-ggplot(house_future, aes(x = date, y = politicians, color = period)) +
+ggplot(house_future, aes(x = year, y = politicians, color = period)) +
   geom_line(lwd = 1) +
+  # Add a reference line for when we achieve full parity
+  geom_vline(xintercept = house_parity,
+             color = "slateblue1",
+             linetype = "dashed") +
+  geom_hline(yintercept = 435/2,
+             color = "slateblue1",
+             linetype = "dashed") +
   # Change the theme to classic
   theme_classic() +
   # Change the colors we're working with
@@ -500,20 +514,44 @@ ggplot(house_future, aes(x = date, y = politicians, color = period)) +
         plot.caption = element_text(color = "dark gray", face = "italic", size = 10))
 
 
+
+# Thus, according to the House ARIMA model built, the U.S. House of
+# Representatives will first achieve full gender parity in the year:
+(house_parity <- min(house_future$year[house_future$politicians > 217]))
+
+# Thus, according to the Senate ARIMA model built, the U.S. Senate will first
+# achieve full gender parity in the year:
+(senate_parity <- min(senate_future$year[senate_future$politicians > 50]))
+
 # Let's plot the Senate and House graphs side-by-side
 # Start by bringing the datasets together and imputing a new variable called
 # chamber
 congress_future <- house_future %>%
-  mutate(chamber = "U.S. House of Representatives") %>%
+  mutate(chamber = "U.S. House of Representatives",
+         parity_year = house_parity,
+         parity_number = 435/2) %>%
   bind_rows(senate_future) %>%
-  mutate(chamber = if_else(is.na(chamber), "U.S. Senate", chamber)) %>%
+  mutate(chamber = if_else(is.na(chamber), "U.S. Senate", chamber),
+         parity_year = if_else(is.na(parity_year), senate_parity, parity_year),
+         parity_number = if_else(is.na(parity_number), 50, parity_number)) %>%
   print()
 
+
+
 # Let's plot our data
-ggplot(congress_future, aes(x = date, y = politicians, color = period)) +
+ggplot(congress_future, aes(x = year, y = politicians, color = period)) +
   geom_line(lwd = 1.5) +
   # Facet wrap to get two graphs
   facet_wrap(~ chamber, scales = "free_y") +
+  # Add a reference line for when we achieve full parity
+  geom_vline(data = congress_future,
+             aes(xintercept = parity_year),
+             color = "slateblue1",
+             linetype = "dashed") +
+  geom_hline(data = congress_future,
+             aes(yintercept = parity_number),
+             color = "slateblue1",
+             linetype = "dashed") +
   # Change the theme to classic
   theme_classic() +
   # Change the colors we're working with
@@ -532,17 +570,11 @@ ggplot(congress_future, aes(x = date, y = politicians, color = period)) +
         plot.caption = element_text(color = "dark gray", face = "italic", size = 10))
 
 
-# Thus, according to the House ARIMA model built, the U.S. House of
-# Representatives will first achieve full gender parity in the year:
-(house_parity <- min(house_future$year[house_future$politicians > 217]))
-
-# Thus, according to the Senate ARIMA model built, the U.S. Senate will first
-# achieve full gender parity in the year:
-(senate_parity <- min(senate_future$year[senate_future$politicians > 50]))
-
 # From these graphs, we can see that both ARIMA models took a rather linear
 # approach, assuming a general increase over time. This makes sense, because
 # ARIMA usually looks for seasonality trends (which our data does NOT have)
 # on top of the general trends (which our data does have). Obviously, this
 # assumes that the rate of increase is steady over time and doesn't plateau
-# as women in Congress hit a certain threshold.
+# as women in Congress hit a certain threshold. Assuming the rate of increase
+# is generally linear, the Senate will achieve full parity almost 50 years
+# before the House.
