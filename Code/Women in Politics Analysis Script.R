@@ -642,7 +642,7 @@ ggsave(here::here("Viz", "Congress_ARIMA_Viz.jpg"))
    # Let's change the names of the axes and title
    xlab("Party") +
    ylab("Number of Female Politicians") +
-   labs(title = "Number of Female Politicians at Various\nLevels of Government",
+   labs(title = "Number of Female Politicians at Various\nLevels of Government by State",
         subtitle = paste("Data ranges from", min(wp_selected$year), "to", max(wp_selected$year)),
         caption = "Data is gathered from the Eagleton Institute of Politics,\nCenter for American Women in Politics at\nhttps://cawpdata.rutgers.edu/") +
    # format our title and subtitle
