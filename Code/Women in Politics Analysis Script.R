@@ -25,13 +25,20 @@ suppressMessages(library("pander")) # Used for pretty tables
 suppressMessages(library("lubridate")) # Used for fixing dates
 suppressMessages(library("praise")) # Used for positive reinforcement
 suppressMessages(library("janitor")) # Used for data cleaning
+suppressMessages(library("pdftools")) # Used reading PDF files in
 
 
 # Bring in the data, taking advantage of the project structure
+# Our base dataset
 female_politicians_data <- readr::read_csv(here::here("Data/women_in_politics.csv"))
+# Read in a pdf of the number of House members over time, by state
+house_members <- here::here("Data/state_apportionment.pdf") %>%
+  pdftools::pdf_text() %>%
+  readr::read_lines()
 
 # Convert to a tibble, my preferred data structure
 (female_politicians_data <- as_tibble(female_politicians_data))
+(house_members <- as_tibble(house_members))
 
 
 ########################################################################
@@ -81,6 +88,16 @@ wp_minmax <- wp_cleaned %>%
   # Reorder columns to see the result
   select(id, contains("year"), contains("name"), everything()) %>%
   ungroup() %>%
+  print()
+
+
+### House Dataset
+# Let's clean up our dataset of the number of total members in the House
+# by State over time
+house_cleaned <- house_members %>%
+  str_squish() %>%
+  str_split(pattern = " ") %>%
+  as_tibble() %>%
   print()
 
 
@@ -211,4 +228,56 @@ wp_selected %>%
 #      makes sense given the higher number of positions open at that level.
 
 
+# Now let's explore the proportion of women who have been members of the U.S.
+# Senate over time. Unfortunately our dataset only includes the number of
+# women who have held elected office over time, so it's difficult to compare
+# that to the number of men who have held office over time at all the levels
+# of government, except for the U.S. Senate, which had 100 members since 1959.
+senate_composition <- wp_selected %>%
+  # Filter to only our U.S. Senators after 1958
+  filter(level == "Federal/Congress" &
+           position == "U.S. Senator" &
+           year > 1958 &
+           year < year(Sys.Date())) %>%
+  # Select our variables to analyze
+  select(id, year) %>%
+  # Pull only distinct values
+  distinct() %>%
+  # Group by year
+  group_by(year) %>%
+  # Count everything up!
+  summarise(female_senators = n(),
+            male_senators = 100 - n()) %>%
+  # Pivot our dataset longer so we have number of senators in one column
+  # instead of two
+  pivot_longer(cols = contains("senators"),
+               names_to = "gender",
+               values_to = "number_senators") %>%
+  # Clean up the gender column since it has "_senators" at the end of it
+  mutate(gender = str_remove(gender, pattern = "_.*"),
+         # Make the first letter upper case
+         gender = str_to_title(gender),
+         # Make it a factor
+         gender = factor(gender, levels = c("Male", "Female"))) %>%
+  print()
+
+
+# run our visualization
+ggplot(senate_composition, aes(x = year, y = number_senators, fill = gender)) +
+  # Let's make it a column graph and change the color
+  geom_area(alpha = .9, color = "gray") +
+  # Change the theme to classic
+  theme_classic() +
+  # Change the colors we're working with
+  scale_fill_manual(name = "Gender", values = c("gray", "slateblue")) +
+  # Let's change the names of the axes and title
+  xlab("") +
+  ylab("Percentage (%) by Gender") +
+  labs(title = "Number of U.S. Senators by Gender",
+       subtitle = paste("Data ranges from", min(senate_composition$year), "to", max(senate_composition$year)),
+       caption = "Data is gathered from the Eagleton Institute of Politics,\nCenter for American Women in Politics at\nhttps://cawpdata.rutgers.edu/") +
+  # format our title and subtitle
+  theme(plot.title = element_text(hjust = 0, color = "slateblue4"),
+        plot.subtitle = element_text(hjust = 0, color = "slateblue2", size = 10),
+        plot.caption = element_text(color = "dark gray", face = "italic", size = 10))
 
