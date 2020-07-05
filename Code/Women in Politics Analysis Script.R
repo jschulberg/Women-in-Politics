@@ -149,7 +149,7 @@ party_colors <- tibble(
 )
 
 # Total number of Female Politicians holding office by Level
-wp_selected %>%
+(Women_in_Office_by_Party <- wp_selected %>%
   # Select our variables to analyze
   select(id, level, party_grouped) %>%
   # Pull only distinct values
@@ -179,7 +179,8 @@ wp_selected %>%
     theme(plot.title = element_text(hjust = 0, color = "slateblue4"),
           plot.subtitle = element_text(hjust = 0, color = "slateblue2", size = 10),
           plot.caption = element_text(color = "dark gray", size = 10, face = "italic"))
-
+  )
+ggsave(here::here("Viz", "Women_in_Office_by_Party.jpg"))
 
 # Quite clearly, most of the women who have held office have done so at the state legislative
 # level. Interestingly enough, most of the women who have held office at the state
@@ -188,7 +189,7 @@ wp_selected %>%
 
 
 # Let's break out these numbers of Female Politicians holding office over time
-wp_selected %>%
+(Women_in_Office_Over_Time <- wp_selected %>%
   # Select our variables to analyze
   select(id, level, party_grouped, year) %>%
   # Pull only distinct values
@@ -221,6 +222,8 @@ wp_selected %>%
   theme(plot.title = element_text(hjust = 0, color = "slateblue4"),
         plot.subtitle = element_text(hjust = 0, color = "slateblue2", size = 10),
         plot.caption = element_text(color = "dark gray", size = 10, face = "italic"))
+)
+ggsave(here::here("Viz", "Women_in_Office_Over_Time.jpg"))
 
 # Here are some key takeaways:
 #   1. The number of women holding elected office has been growing incredibly
@@ -294,7 +297,7 @@ house_composition <- wp_selected %>%
 congress_composition <- bind_rows(house_composition, senate_composition)
 
 # run our visualization
-ggplot(congress_composition, aes(x = year, y = politicians, fill = gender)) +
+(US_Congressmembers_by_Gender <- ggplot(congress_composition, aes(x = year, y = politicians, fill = gender)) +
   # Let's make it a column graph and change the color
   geom_area(alpha = .9, color = "gray") +
   # Let's create separate graphs for House vs. Senate
@@ -313,6 +316,8 @@ ggplot(congress_composition, aes(x = year, y = politicians, fill = gender)) +
   theme(plot.title = element_text(hjust = 0, color = "slateblue4"),
         plot.subtitle = element_text(hjust = 0, color = "slateblue2", size = 10),
         plot.caption = element_text(color = "dark gray", face = "italic", size = 10))
+  )
+ggsave(here::here("Viz", "US_Congressmembers_by_Gender.jpg"))
 
 # From this, we can see that in both chambers of Congress, the share of
 # women has increased steadily, with a significant bump in the 1990s and a
@@ -394,9 +399,13 @@ senate_future <- senate_full %>%
   bind_rows(forecast_full) %>%
   print()
 
+# Thus, according to the Senate ARIMA model built, the U.S. Senate will first
+# achieve full gender parity in the year:
+(senate_parity <- min(senate_future$year[senate_future$politicians > 50]))
+
 
 # Let's plot our data
-ggplot(senate_future, aes(x = year, y = politicians, color = period)) +
+(Senate_ARIMA_Viz <- ggplot(senate_future, aes(x = year, y = politicians, color = period)) +
   geom_line(lwd = 2) +
   # Add a reference line for when we achieve full parity
   geom_vline(xintercept = senate_parity,
@@ -421,6 +430,8 @@ ggplot(senate_future, aes(x = year, y = politicians, color = period)) +
   theme(plot.title = element_text(hjust = 0, color = "slateblue4"),
         plot.subtitle = element_text(hjust = 0, color = "slateblue2", size = 10),
         plot.caption = element_text(color = "dark gray", face = "italic", size = 10))
+)
+ggsave(here::here("Viz", "Senate_ARIMA_Viz.jpg"))
 
 
 ## Let's now do the same thing for the House
@@ -485,9 +496,12 @@ house_future <- house_full %>%
   bind_rows(forecast_full) %>%
   print()
 
+# Thus, according to the House ARIMA model built, the U.S. House of
+# Representatives will first achieve full gender parity in the year:
+(house_parity <- min(house_future$year[house_future$politicians > 217]))
 
 # Let's plot our data
-ggplot(house_future, aes(x = year, y = politicians, color = period)) +
+(House_ARIMA_Viz <- ggplot(house_future, aes(x = year, y = politicians, color = period)) +
   geom_line(lwd = 1) +
   # Add a reference line for when we achieve full parity
   geom_vline(xintercept = house_parity,
@@ -512,16 +526,9 @@ ggplot(house_future, aes(x = year, y = politicians, color = period)) +
   theme(plot.title = element_text(hjust = 0, color = "slateblue4"),
         plot.subtitle = element_text(hjust = 0, color = "slateblue2", size = 10),
         plot.caption = element_text(color = "dark gray", face = "italic", size = 10))
+)
+ggsave(here::here("Viz", "House_ARIMA_Viz.jpg"))
 
-
-
-# Thus, according to the House ARIMA model built, the U.S. House of
-# Representatives will first achieve full gender parity in the year:
-(house_parity <- min(house_future$year[house_future$politicians > 217]))
-
-# Thus, according to the Senate ARIMA model built, the U.S. Senate will first
-# achieve full gender parity in the year:
-(senate_parity <- min(senate_future$year[senate_future$politicians > 50]))
 
 # Let's plot the Senate and House graphs side-by-side
 # Start by bringing the datasets together and imputing a new variable called
@@ -539,7 +546,7 @@ congress_future <- house_future %>%
 
 
 # Let's plot our data
-ggplot(congress_future, aes(x = year, y = politicians, color = period)) +
+(Congress_ARIMA_Viz <- ggplot(congress_future, aes(x = year, y = politicians, color = period)) +
   geom_line(lwd = 1.5) +
   # Facet wrap to get two graphs
   facet_wrap(~ chamber, scales = "free_y") +
@@ -568,6 +575,9 @@ ggplot(congress_future, aes(x = year, y = politicians, color = period)) +
   theme(plot.title = element_text(hjust = 0, color = "slateblue4"),
         plot.subtitle = element_text(hjust = 0, color = "slateblue2", size = 10),
         plot.caption = element_text(color = "dark gray", face = "italic", size = 10))
+)
+ggsave(here::here("Viz", "Congress_ARIMA_Viz.jpg"))
+
 
 
 # From these graphs, we can see that both ARIMA models took a rather linear
