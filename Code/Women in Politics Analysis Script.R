@@ -25,7 +25,9 @@ suppressMessages(library("pander")) # Used for pretty tables
 suppressMessages(library("lubridate")) # Used for fixing dates
 suppressMessages(library("praise")) # Used for positive reinforcement
 suppressMessages(library("janitor")) # Used for data cleaning
-suppressMessages(library("pdftools")) # Used reading PDF files in
+suppressMessages(library("pdftools")) # Used for reading PDF files in
+suppressMessages(library("forecast")) # Used for time series analysis
+suppressMessages(library("tseries")) # Used for time series analysis
 
 
 # Bring in the data, taking advantage of the project structure
@@ -319,3 +321,221 @@ ggplot(congress_composition, aes(x = year, y = politicians, fill = gender)) +
 # To figure this out, I'll use an ARIMA time-series model to project out
 # the trend in each chamber and figure out when the House will hit 218 women
 # and the Senate 50 women.
+
+
+########################################################################
+## ARIMA ---------------------------------------------------------------
+########################################################################
+# In this next section, I'd like to use an ARIMA time forecasting model to
+# determine when each chamber of the U.S. Congress will achieve full gender
+# parity. What does that mean in plain English? Can we use data science methods
+# to determine when the Senate will have 50 female members and the House 217
+# (435/2) female members?
+
+senate_dates <- congress_composition %>%
+  filter(gender == "Female") %>%
+  filter(branch == "U.S. Senate") %>%
+  # Create a date column out of the year variable
+  mutate(date = as.Date(paste(year, "01", "01", sep = "-"))) %>%
+  print()
+
+# There are a bunch of years that don't have any female politicians, so
+# let's impute the value 0 for them. Start by determining what the total
+# number of years should look like
+years <- seq(min(senate_dates$year), max(senate_dates$year), 1)
+
+# Find the years that are missing from our senate dataset
+missing_years <- years[!(years %in% senate_dates$year)]
+# Create the proper form of our missing data
+missing_data <- tibble(
+  year = missing_years,
+  gender = "Female",
+  politicians = 0,
+  branch = "U.S. Senate",
+  date = as.Date(paste(missing_years, "01", "01", sep = "-"))
+)
+
+# Bring the missing data back into our full dataset
+senate_full <- senate_dates %>%
+  bind_rows(missing_data) %>%
+  arrange(year) %>%
+  print()
+
+# Create a time series object from our date values. We'll start our time
+# series object from the first year (column) in our data frame and end at
+# the final year in our dataset.
+senate_ts <- ts(data = senate_full$politicians,
+                start = min(senate_full$year),
+                end = max(senate_full$year))
+
+# Use auto.arima to build a regression model with ARIMA
+arima_senate <- auto.arima(senate_ts)
+
+# Let's build out our dataset 50 years into the future to forecast any increase
+num_years <- 50
+# Use the forecast function to build our predictions
+senate_forecast <- forecast(arima_senate,
+                            h = num_years # Number of years to forecast
+                            )
+
+# Let's structure these forecasted values in the same form as our dataset,
+# and add an indicator variable in
+forecast_full <- tibble(
+  politicians = senate_forecast$mean,
+  year = seq(max(senate_full$year) + 1, max(senate_full$year) + num_years, 1),
+  gender = "Female",
+  branch = "U.S. Senate",
+  date = as.Date(paste(year, "01", "01", sep = "-")),
+  period = "future" # indicator variable
+)
+
+senate_future <- senate_full %>%
+  mutate(period = "historic") %>%
+  bind_rows(forecast_full) %>%
+  print()
+
+# Thus, according to the ARIMA model built, the U.S. Senate will first
+# achieve full gender parity in the year:
+(senate_parity <- min(senate_future$year[senate_future$politicians > 50]))
+
+# Let's plot our data
+ggplot(senate_future, aes(x = date, y = politicians, color = period)) +
+  geom_line(lwd = 2) +
+  # Change the theme to classic
+  theme_classic() +
+  # Change the colors we're working with
+  scale_color_manual(name = "Time Period",
+                     values = c("slateblue", "gray"),
+                     labels = c("Predicted", "Actual")) +
+  # Let's change the names of the axes and title
+  xlab("Year") +
+  ylab("Number of Senators") +
+  labs(title = "Number of Female U.S. Senators over Time",
+       subtitle = paste("Data ranges from", min(senate_future$year), "to", max(senate_future$year)),
+       caption = "Data is gathered from the Eagleton Institute of Politics,\nCenter for American Women in Politics at\nhttps://cawpdata.rutgers.edu/") +
+  # format our title and subtitle
+  theme(plot.title = element_text(hjust = 0, color = "slateblue4"),
+        plot.subtitle = element_text(hjust = 0, color = "slateblue2", size = 10),
+        plot.caption = element_text(color = "dark gray", face = "italic", size = 10))
+
+
+## Let's now do the same thing for the House
+house_dates <- congress_composition %>%
+  filter(gender == "Female") %>%
+  filter(branch == "U.S. House of Representatives") %>%
+  # Create a date column out of the year variable
+  mutate(date = as.Date(paste(year, "01", "01", sep = "-"))) %>%
+  print()
+
+# There are a bunch of years that don't have any female politicians, so
+# let's impute the value 0 for them. Start by determining what the total
+# number of years should look like
+years <- seq(min(house_dates$year), max(house_dates$year), 1)
+
+# Find the years that are missing from our house dataset
+missing_years <- years[!(years %in% house_dates$year)]
+# Create the proper form of our missing data
+missing_data <- tibble(
+  year = missing_years,
+  gender = "Female",
+  politicians = 0,
+  branch = "U.S. House of Representatives",
+  date = as.Date(paste(missing_years, "01", "01", sep = "-"))
+)
+
+# Bring the missing data back into our full dataset
+house_full <- house_dates %>%
+  bind_rows(missing_data) %>%
+  arrange(year) %>%
+  print()
+
+# Create a time series object from our date values. We'll start our time
+# series object from the first year (column) in our data frame and end at
+# the final year in our dataset.
+house_ts <- ts(data = house_full$politicians,
+                start = min(house_full$year),
+                end = max(house_full$year))
+
+# Use auto.arima to build a regression model with ARIMA
+arima_house <- auto.arima(house_ts)
+
+# Let's build out our dataset 50 years into the future to forecast any increase
+num_years <- 75
+# Use the forecast function to build our predictions
+house_forecast <- forecast(arima_house,
+                            h = num_years # Number of years to forecast
+                           )
+
+# Let's structure these forecasted values in the same form as our dataset,
+# and add an indicator variable in
+forecast_full <- tibble(
+  politicians = house_forecast$mean,
+  year = seq(max(house_full$year) + 1, max(house_full$year) + num_years, 1),
+  gender = "Female",
+  branch = "U.S. House of Representatives",
+  date = as.Date(paste(year, "01", "01", sep = "-")),
+  period = "future" # indicator variable
+)
+
+house_future <- house_full %>%
+  mutate(period = "historic") %>%
+  bind_rows(forecast_full) %>%
+  print()
+
+# Thus, according to the ARIMA model built, the U.S. House of Representatives will first
+# achieve full gender parity in the year:
+(house_parity <- min(house_future$year[house_future$politicians > 217]))
+
+# Let's plot our data
+ggplot(house_future, aes(x = date, y = politicians, color = period)) +
+  geom_line(lwd = 1) +
+  # Change the theme to classic
+  theme_classic() +
+  # Change the colors we're working with
+  scale_color_manual(name = "Time Period",
+                     values = c("slateblue", "gray"),
+                     labels = c("Predicted", "Actual")) +
+  # Let's change the names of the axes and title
+  xlab("Year") +
+  ylab("Number of Senators") +
+  labs(title = "Number of Female U.S. House Reps over Time",
+       subtitle = paste("Data ranges from", min(house_future$year), "to", max(house_future$year)),
+       caption = "Data is gathered from the Eagleton Institute of Politics,\nCenter for American Women in Politics at\nhttps://cawpdata.rutgers.edu/") +
+  # format our title and subtitle
+  theme(plot.title = element_text(hjust = 0, color = "slateblue4"),
+        plot.subtitle = element_text(hjust = 0, color = "slateblue2", size = 10),
+        plot.caption = element_text(color = "dark gray", face = "italic", size = 10))
+
+
+# Let's plot the Senate and House graphs side-by-side
+# Start by bringing the datasets together and imputing a new variable called
+# chamber
+congress_future <- house_future %>%
+  mutate(chamber = "U.S. House of Representatives") %>%
+  bind_rows(senate_future) %>%
+  mutate(chamber = if_else(is.na(chamber), "U.S. Senate", chamber)) %>%
+  print()
+
+# Let's plot our data
+ggplot(congress_future, aes(x = date, y = politicians, color = period)) +
+  geom_line(lwd = 1.5) +
+  # Facet wrap to get two graphs
+  facet_wrap(~ chamber, scales = "free_y") +
+  # Change the theme to classic
+  theme_classic() +
+  # Change the colors we're working with
+  scale_color_manual(name = "Time Period",
+                     values = c("slateblue", "gray"),
+                     labels = c("Predicted", "Actual")) +
+  # Let's change the names of the axes and title
+  xlab("Year") +
+  ylab("Number of Congresswomen") +
+  labs(title = "Number of U.S. Congresswomen over Time",
+       subtitle = paste("Data ranges from", min(house_future$year), "to", max(house_future$year)),
+       caption = "Data is gathered from the Eagleton Institute of Politics,\nCenter for American Women in Politics at\nhttps://cawpdata.rutgers.edu/") +
+  # format our title and subtitle
+  theme(plot.title = element_text(hjust = 0, color = "slateblue4"),
+        plot.subtitle = element_text(hjust = 0, color = "slateblue2", size = 10),
+        plot.caption = element_text(color = "dark gray", face = "italic", size = 10))
+
+
