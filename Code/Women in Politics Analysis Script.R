@@ -97,6 +97,7 @@ wp_minmax <- wp_cleaned %>%
 house_cleaned <- house_members %>%
   str_squish() %>%
   str_split(pattern = " ") %>%
+  unlist() %>%
   as_tibble() %>%
   print()
 
@@ -239,10 +240,6 @@ senate_composition <- wp_selected %>%
            position == "U.S. Senator" &
            year > 1958 &
            year < year(Sys.Date())) %>%
-  # Select our variables to analyze
-  select(id, year) %>%
-  # Pull only distinct values
-  distinct() %>%
   # Group by year
   group_by(year) %>%
   # Count everything up!
@@ -252,28 +249,62 @@ senate_composition <- wp_selected %>%
   # instead of two
   pivot_longer(cols = contains("senators"),
                names_to = "gender",
-               values_to = "number_senators") %>%
+               values_to = "politicians") %>%
   # Clean up the gender column since it has "_senators" at the end of it
   mutate(gender = str_remove(gender, pattern = "_.*"),
          # Make the first letter upper case
          gender = str_to_title(gender),
          # Make it a factor
-         gender = factor(gender, levels = c("Male", "Female"))) %>%
+         gender = factor(gender, levels = c("Male", "Female")),
+         # Let's create one column to identify this dataset as Senate
+         branch = "U.S. Senate") %>%
   print()
 
+# Let's do the same thing, but for U.S. House of Representatives, which has
+# 435 members every year
+house_composition <- wp_selected %>%
+  # Filter to only our U.S. House of Representatives members after 1958
+  filter(level == "Federal/Congress" &
+           position == "U.S. Representative" &
+           year > 1958 &
+           year < year(Sys.Date())) %>%
+  # Group by year
+  group_by(year) %>%
+  # Count everything up!
+  summarise(female_reps = n(),
+            male_reps = 435 - n()) %>%
+  # Pivot our dataset longer so we have number of reps in one column
+  # instead of two
+  pivot_longer(cols = contains("reps"),
+               names_to = "gender",
+               values_to = "politicians") %>%
+  # Clean up the gender column since it has "_reps" at the end of it
+  mutate(gender = str_remove(gender, pattern = "_.*"),
+         # Make the first letter upper case
+         gender = str_to_title(gender),
+         # Make it a factor
+         gender = factor(gender, levels = c("Male", "Female")),
+         # Let's create one column to identify this dataset as Senate
+         branch = "U.S. House of Representatives") %>%
+  print()
+
+# Bind our two datasets together
+congress_composition <- bind_rows(house_composition, senate_composition)
 
 # run our visualization
-ggplot(senate_composition, aes(x = year, y = number_senators, fill = gender)) +
+ggplot(congress_composition, aes(x = year, y = politicians, fill = gender)) +
   # Let's make it a column graph and change the color
   geom_area(alpha = .9, color = "gray") +
+  # Let's create separate graphs for House vs. Senate
+  facet_wrap(~ branch, scales = "free_y") +
   # Change the theme to classic
   theme_classic() +
   # Change the colors we're working with
   scale_fill_manual(name = "Gender", values = c("gray", "slateblue")) +
   # Let's change the names of the axes and title
-  xlab("") +
-  ylab("Percentage (%) by Gender") +
-  labs(title = "Number of U.S. Senators by Gender",
+  xlab("Year") +
+  ylab("Number of Congress Members") +
+  labs(title = "Number of U.S. Congress Members by Gender",
        subtitle = paste("Data ranges from", min(senate_composition$year), "to", max(senate_composition$year)),
        caption = "Data is gathered from the Eagleton Institute of Politics,\nCenter for American Women in Politics at\nhttps://cawpdata.rutgers.edu/") +
   # format our title and subtitle
@@ -281,3 +312,10 @@ ggplot(senate_composition, aes(x = year, y = number_senators, fill = gender)) +
         plot.subtitle = element_text(hjust = 0, color = "slateblue2", size = 10),
         plot.caption = element_text(color = "dark gray", face = "italic", size = 10))
 
+# From this, we can see that in both chambers of Congress, the share of
+# women has increased steadily, with a significant bump in the 1990s and a
+# steady increase from there. The next question that comes to my head is:
+#   When will we achieve a 50-50 parity in each chamber of Congress?
+# To figure this out, I'll use an ARIMA time-series model to project out
+# the trend in each chamber and figure out when the House will hit 218 women
+# and the Senate 50 women.
