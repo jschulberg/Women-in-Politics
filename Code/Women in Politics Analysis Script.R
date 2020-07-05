@@ -372,7 +372,7 @@ senate_ts <- ts(data = senate_full$politicians,
 arima_senate <- auto.arima(senate_ts)
 
 # Let's build out our dataset 50 years into the future to forecast any increase
-num_years <- 50
+num_years <- 81
 # Use the forecast function to build our predictions
 senate_forecast <- forecast(arima_senate,
                             h = num_years # Number of years to forecast
@@ -394,9 +394,6 @@ senate_future <- senate_full %>%
   bind_rows(forecast_full) %>%
   print()
 
-# Thus, according to the ARIMA model built, the U.S. Senate will first
-# achieve full gender parity in the year:
-(senate_parity <- min(senate_future$year[senate_future$politicians > 50]))
 
 # Let's plot our data
 ggplot(senate_future, aes(x = date, y = politicians, color = period)) +
@@ -459,8 +456,7 @@ house_ts <- ts(data = house_full$politicians,
 # Use auto.arima to build a regression model with ARIMA
 arima_house <- auto.arima(house_ts)
 
-# Let's build out our dataset 50 years into the future to forecast any increase
-num_years <- 75
+
 # Use the forecast function to build our predictions
 house_forecast <- forecast(arima_house,
                             h = num_years # Number of years to forecast
@@ -482,9 +478,6 @@ house_future <- house_full %>%
   bind_rows(forecast_full) %>%
   print()
 
-# Thus, according to the ARIMA model built, the U.S. House of Representatives will first
-# achieve full gender parity in the year:
-(house_parity <- min(house_future$year[house_future$politicians > 217]))
 
 # Let's plot our data
 ggplot(house_future, aes(x = date, y = politicians, color = period)) +
@@ -539,3 +532,17 @@ ggplot(congress_future, aes(x = date, y = politicians, color = period)) +
         plot.caption = element_text(color = "dark gray", face = "italic", size = 10))
 
 
+# Thus, according to the House ARIMA model built, the U.S. House of
+# Representatives will first achieve full gender parity in the year:
+(house_parity <- min(house_future$year[house_future$politicians > 217]))
+
+# Thus, according to the Senate ARIMA model built, the U.S. Senate will first
+# achieve full gender parity in the year:
+(senate_parity <- min(senate_future$year[senate_future$politicians > 50]))
+
+# From these graphs, we can see that both ARIMA models took a rather linear
+# approach, assuming a general increase over time. This makes sense, because
+# ARIMA usually looks for seasonality trends (which our data does NOT have)
+# on top of the general trends (which our data does have). Obviously, this
+# assumes that the rate of increase is steady over time and doesn't plateau
+# as women in Congress hit a certain threshold.
