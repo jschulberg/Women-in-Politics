@@ -340,31 +340,22 @@ ggsave(here::here("Viz", "US_Congressmembers_by_Gender.jpg"))
 senate_dates <- congress_composition %>%
   filter(gender == "Female") %>%
   filter(branch == "U.S. Senate") %>%
-  # Create a date column out of the year variable
-  mutate(date = as.Date(paste(year, "01", "01", sep = "-"))) %>%
   print()
 
 # There are a bunch of years that don't have any female politicians, so
 # let's impute the value 0 for them. Start by determining what the total
 # number of years should look like
-years <- seq(min(senate_dates$year), max(senate_dates$year), 1)
-
-# Find the years that are missing from our senate dataset
-missing_years <- years[!(years %in% senate_dates$year)]
-# Create the proper form of our missing data
-missing_data <- tibble(
-  year = missing_years,
-  gender = "Female",
-  politicians = 0,
-  branch = "U.S. Senate",
-  date = as.Date(paste(missing_years, "01", "01", sep = "-"))
-)
-
-# Bring the missing data back into our full dataset
 senate_full <- senate_dates %>%
-  bind_rows(missing_data) %>%
-  arrange(year) %>%
+  tidyr::complete(year = min(senate_dates$year):max(senate_dates$year),
+                  fill = list(gender = "Female",
+                              politicians = 0,
+                              branch = "U.S. Senate"
+                  )
+  ) %>%
+  # Create a date column out of the year variable
+  mutate(date = as.Date(paste(year, "01", "01", sep = "-"))) %>%
   print()
+
 
 # Create a time series object from our date values. We'll start our time
 # series object from the first year (column) in our data frame and end at
@@ -424,7 +415,7 @@ senate_future <- senate_full %>%
   xlab("Year") +
   ylab("Number of Senators") +
   labs(title = "Number of Female U.S. Senators over Time",
-       subtitle = paste("Data ranges from", min(senate_future$year), "to", max(senate_future$year)),
+       subtitle = paste("Data ranges from ", min(senate_future$year), " to ", max(senate_future$year), ". The dashed lines represent\nthe year in which each chamber achieves full gender parity.", sep = ""),
        caption = "Data is gathered from the Eagleton Institute of Politics,\nCenter for American Women in Politics at\nhttps://cawpdata.rutgers.edu/") +
   # format our title and subtitle
   theme(plot.title = element_text(hjust = 0, color = "slateblue4"),
@@ -438,31 +429,22 @@ ggsave(here::here("Viz", "Senate_ARIMA_Viz.jpg"))
 house_dates <- congress_composition %>%
   filter(gender == "Female") %>%
   filter(branch == "U.S. House of Representatives") %>%
-  # Create a date column out of the year variable
-  mutate(date = as.Date(paste(year, "01", "01", sep = "-"))) %>%
   print()
 
 # There are a bunch of years that don't have any female politicians, so
 # let's impute the value 0 for them. Start by determining what the total
 # number of years should look like
-years <- seq(min(house_dates$year), max(house_dates$year), 1)
-
-# Find the years that are missing from our house dataset
-missing_years <- years[!(years %in% house_dates$year)]
-# Create the proper form of our missing data
-missing_data <- tibble(
-  year = missing_years,
-  gender = "Female",
-  politicians = 0,
-  branch = "U.S. House of Representatives",
-  date = as.Date(paste(missing_years, "01", "01", sep = "-"))
-)
-
-# Bring the missing data back into our full dataset
 house_full <- house_dates %>%
-  bind_rows(missing_data) %>%
-  arrange(year) %>%
+  tidyr::complete(year = min(house_dates$year):max(house_dates$year),
+                  fill = list(gender = "Female",
+                              politicians = 0,
+                              branch = "U.S. House of Representatives"
+                  )
+  ) %>%
+  # Create a date column out of the year variable
+  mutate(date = as.Date(paste(year, "01", "01", sep = "-"))) %>%
   print()
+
 
 # Create a time series object from our date values. We'll start our time
 # series object from the first year (column) in our data frame and end at
@@ -518,9 +500,9 @@ house_future <- house_full %>%
                      labels = c("Predicted", "Actual")) +
   # Let's change the names of the axes and title
   xlab("Year") +
-  ylab("Number of Senators") +
+  ylab("Number of Congresswomen") +
   labs(title = "Number of Female U.S. House Reps over Time",
-       subtitle = paste("Data ranges from", min(house_future$year), "to", max(house_future$year)),
+       subtitle = paste("Data ranges from ", min(house_future$year), " to ", max(house_future$year), ". The dashed lines represent\nthe year in which each chamber achieves full gender parity.", sep = ""),
        caption = "Data is gathered from the Eagleton Institute of Politics,\nCenter for American Women in Politics at\nhttps://cawpdata.rutgers.edu/") +
   # format our title and subtitle
   theme(plot.title = element_text(hjust = 0, color = "slateblue4"),
@@ -569,7 +551,7 @@ congress_future <- house_future %>%
   xlab("Year") +
   ylab("Number of Congresswomen") +
   labs(title = "Number of U.S. Congresswomen over Time",
-       subtitle = paste("Data ranges from", min(house_future$year), "to", max(house_future$year)),
+       subtitle = paste("Data ranges from ", min(house_future$year), " to ", max(house_future$year), ". The dashed lines represent\nthe year in which each chamber achieves full gender parity.", sep = ""),
        caption = "Data is gathered from the Eagleton Institute of Politics,\nCenter for American Women in Politics at\nhttps://cawpdata.rutgers.edu/") +
   # format our title and subtitle
   theme(plot.title = element_text(hjust = 0, color = "slateblue4"),
