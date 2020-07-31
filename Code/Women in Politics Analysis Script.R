@@ -16,18 +16,19 @@
 ## Set Up -----------------------------------------------------------------
 ###########################################################################
 # Bring in packages
-suppressMessages(library("tidyverse")) # Used for data wrangling
-suppressMessages(library("tidyr")) # Used for data cleaning
-suppressMessages(library("ggplot2")) # Used for visualizations
-suppressMessages(library("readxl")) # Used for loading excel files
-suppressMessages(library("readr")) # Used for working with files
-suppressMessages(library("pander")) # Used for pretty tables
-suppressMessages(library("lubridate")) # Used for fixing dates
-suppressMessages(library("praise")) # Used for positive reinforcement
-suppressMessages(library("janitor")) # Used for data cleaning
-suppressMessages(library("pdftools")) # Used for reading PDF files in
-suppressMessages(library("forecast")) # Used for time series analysis
-suppressMessages(library("tseries")) # Used for time series analysis
+suppressMessages(library("pacman"))
+pacman::p_load("tidyverse", # Used for data wrangling,
+               "tidyr", # Used for data cleaning,
+               "ggplot2", # Used for visualizations,
+               "readxl", # Used for loading excel files,
+               "readr", # Used for working with files,
+               "pander", # Used for pretty tables,
+               "lubridate", # Used for fixing dates,
+               "praise", # Used for positive reinforcement,
+               "janitor", # Used for data cleaning,
+               "pdftools", # Used for reading PDF files in,
+               "forecast", # Used for time series analysis,
+               "tseries")  # Used for time series analysis
 
 
 # Bring in the data, taking advantage of the project structure
@@ -86,7 +87,8 @@ wp_minmax <- wp_cleaned %>%
   group_by(id) %>%
   mutate(min_year = min(year),
          max_year = max(year),
-         years_of_service = str_c(min(year), max(year), sep = "-")) %>%
+         years_of_service = max(year) - min(year),
+         years_in_office = str_c(min(year), max(year), sep = "-")) %>%
   # Reorder columns to see the result
   select(id, contains("year"), contains("name"), everything()) %>%
   ungroup() %>%
@@ -367,7 +369,7 @@ senate_ts <- ts(data = senate_full$politicians,
 # Use auto.arima to build a regression model with ARIMA
 arima_senate <- auto.arima(senate_ts)
 
-# Let's build out our dataset 50 years into the future to forecast any increase
+# Let's build out our dataset 81 years into the future to forecast any increase
 num_years <- 81
 # Use the forecast function to build our predictions
 senate_forecast <- forecast(arima_senate,
@@ -480,7 +482,7 @@ house_future <- house_full %>%
 
 # Thus, according to the House ARIMA model built, the U.S. House of
 # Representatives will first achieve full gender parity in the year:
-(house_parity <- min(house_future$year[house_future$politicians > 217]))
+(house_parity <- min(house_future$year[house_future$politicians > 435/2]))
 
 # Let's plot our data
 (House_ARIMA_Viz <- ggplot(house_future, aes(x = year, y = politicians, color = period)) +
@@ -523,6 +525,7 @@ congress_future <- house_future %>%
   mutate(chamber = if_else(is.na(chamber), "U.S. Senate", chamber),
          parity_year = if_else(is.na(parity_year), senate_parity, parity_year),
          parity_number = if_else(is.na(parity_number), 50, parity_number)) %>%
+  arrange(year) %>%
   print()
 
 
@@ -563,13 +566,12 @@ ggsave(here::here("Viz", "Congress_ARIMA_Viz.jpg"))
 
 
 # From these graphs, we can see that both ARIMA models took a rather linear
-# approach, assuming a general increase over time. This makes sense, because
+# approach, assuming a steady increase over time. This makes sense, because
 # ARIMA usually looks for seasonality trends (which our data does NOT have)
 # on top of the general trends (which our data does have). Obviously, this
 # assumes that the rate of increase is steady over time and doesn't plateau
 # as women in Congress hit a certain threshold. Assuming the rate of increase
-# is generally linear, the Senate will achieve full parity almost 50 years
-# before the House.
+# is generally linear, the Senate will achieve full parity before the House.
 
 
 
@@ -636,3 +638,10 @@ ggsave(here::here("Viz", "Congress_ARIMA_Viz.jpg"))
 )
 ggsave(here::here("Viz", "Women_in_Office_by_State.jpg"))
 
+
+# From this we can see that certain states have more women in Congress than others.
+# This isn't wholly helpful because certain states that dominate at the Federal
+# level (like California, New York, and Florida), generally have *more*
+# representatives compared to smaller states (like Rhode Island, Wyoming, and
+# Delaware). This visualization would be much more representative if I were
+# to normalize by state population.
