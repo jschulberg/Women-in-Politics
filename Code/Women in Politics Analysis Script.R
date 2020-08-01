@@ -20,6 +20,7 @@ suppressMessages(library("pacman"))
 pacman::p_load("tidyverse", # Used for data wrangling,
                "tidyr", # Used for data cleaning,
                "ggplot2", # Used for visualizations,
+               "maps", # Used for map-based visualizations
                "readxl", # Used for loading excel files,
                "readr", # Used for working with files,
                "pander", # Used for pretty tables,
@@ -150,7 +151,8 @@ party_colors <- tibble(
   party_grouped = c("Democrat", "Republican", "Other")
 )
 
-# Total number of Female Politicians holding office by Level
+
+# Total number of Female Politicians holding office by Level and party
 (Women_in_Office_by_Party <- wp_selected %>%
   # Select our variables to analyze
   select(id, level, party_grouped) %>%
@@ -189,9 +191,50 @@ ggsave(here::here("Viz", "Women_in_Office_by_Party.jpg"))
 # legislative or Federal/Congress level have been members of the two major parties.
 # In D.C., a lot of women outside the two major parties have won office.
 
+# This is great to see total numbers, but our data spans nearly 130 years!
+# Let's breakout our totals over time to look for trends.
 
 # Let's break out these numbers of Female Politicians holding office over time
 (Women_in_Office_Over_Time <- wp_selected %>%
+    # Select our variables to analyze
+    select(id, level, year) %>%
+    # Pull only distinct values
+    distinct() %>%
+    # Group by level and political party
+    group_by(year, level) %>%
+    # Count everything up!
+    summarise(num = n()) %>%
+    # Because it'll skew the data, let's get rid of anything from the current
+    # year or later
+    filter(year < year(Sys.Date())) %>%
+    # Start our visualization, creating our groups by party affiliation
+    ggplot(aes(x = year, y = num)) +
+    geom_line(lwd = 1.5, color = "slateblue") +
+    # Create a separate chart, with a flexible y-axis, for each level of office
+    facet_wrap(~level, scales = "free_y") +
+    # Change the theme to classic
+    theme_classic() +
+    # Let's change the names of the axes and title
+    xlab("Year") +
+    ylab("Number of Female Politicians") +
+    labs(title = "Number of Female Politicians at Various\nLevels of Government over Time",
+         subtitle = paste("Data ranges from", min(wp_selected$year), "to", max(wp_selected$year)),
+         caption = "Data is gathered from the Eagleton Institute of Politics,\nCenter for American Women in Politics at\nhttps://cawpdata.rutgers.edu/") +
+    # format our title and subtitle
+    theme(plot.title = element_text(hjust = 0, color = "slateblue4"),
+          plot.subtitle = element_text(hjust = 0, color = "slateblue2", size = 10),
+          plot.caption = element_text(color = "dark gray", size = 10, face = "italic"))
+)
+ggsave(here::here("Viz", "Women_in_Office_Over_Time.jpg"))
+
+# Here are some key takeaways:
+#   1. The number of women holding elected office has been growing incredibly
+#      fast over the past few decades
+#   2. Most of the positions held are at the State Legislative level, which
+#      makes sense given the higher number of positions open at that level.
+
+# Let's break out these numbers of Female Politicians holding office over time by party
+(Women_in_Office_Over_Time_Party <- wp_selected %>%
   # Select our variables to analyze
   select(id, level, party_grouped, year) %>%
   # Pull only distinct values
@@ -225,15 +268,57 @@ ggsave(here::here("Viz", "Women_in_Office_by_Party.jpg"))
         plot.subtitle = element_text(hjust = 0, color = "slateblue2", size = 10),
         plot.caption = element_text(color = "dark gray", size = 10, face = "italic"))
 )
-ggsave(here::here("Viz", "Women_in_Office_Over_Time.jpg"))
+ggsave(here::here("Viz", "Women_in_Office_Over_Time_Party.jpg"))
 
-# Here are some key takeaways:
-#   1. The number of women holding elected office has been growing incredibly
-#      fast over the past few decades
-#   2. For female politicians in Congress, Democrats and Repulicans held
-#      lock-step until 1990, when Democrats took off at a much faster rate
-#   3. Most of the positions held are at the State Legislative level, which
-#      makes sense given the higher number of positions open at that level.
+# For female politicians in Congress, Democrats and Repulicans held
+# lock-step until 1990, when Democrats took off at a much faster rate.
+
+### Women in Office by Race
+# How does this change not by political party, but by race? Let's take a look.
+# Let's break out these numbers of Female Politicians holding office over time by party
+(Women_in_Office_Over_Time_Race <- wp_selected %>%
+    # We actually have a facet of our data that race/ethnicity is broken out
+    # by extremely specific categories, which overwhelms the data viz. Let's
+    # combine any woman who is multiracial into the same cateogry
+    mutate(new = case_when(
+      str_detect(race_ethnicity, "Multiracial") ~ TRUE,
+      TRUE ~ FALSE),
+      race_ethnicity = if_else(new == T, "Multiracial", race_ethnicity),
+      ) %>%
+    # Select our variables to analyze
+    select(id, level, race_ethnicity, year) %>%
+    # Drop any data that is unavailable
+    filter(race_ethnicity != "Unavailable") %>%
+    # Pull only distinct values
+    distinct() %>%
+    # Group by level and political party
+    group_by(year, level, race_ethnicity) %>%
+    # Count everything up!
+    summarise(num = n()) %>%
+    # Because it'll skew the data, let's get rid of anything from the current
+    # year or later
+    filter(year < year(Sys.Date())) %>%
+    # Start our visualization, creating our groups by party affiliation
+    ggplot(aes(x = year, y = num, color = race_ethnicity)) +
+    geom_line(lwd = 2) +
+    # Change our color scales
+    scale_color_brewer(palette = "Paired") +
+    # Create a separate chart, with a flexible y-axis, for each level of office
+    facet_wrap(~level, scales = "free_y") +
+    # Change the theme to classic
+    theme_classic() +
+    # Let's change the names of the axes and title
+    xlab("Year") +
+    ylab("Number of Female Politicians") +
+    labs(title = "Number of Female Politicians at Various\nLevels of Government over Time",
+         subtitle = paste("Data ranges from", min(wp_selected$year), "to", max(wp_selected$year)),
+         caption = "Data is gathered from the Eagleton Institute of Politics,\nCenter for American Women in Politics at\nhttps://cawpdata.rutgers.edu/") +
+    # format our title and subtitle
+    theme(plot.title = element_text(hjust = 0, color = "slateblue4"),
+          plot.subtitle = element_text(hjust = 0, color = "slateblue2", size = 10),
+          plot.caption = element_text(color = "dark gray", size = 10, face = "italic"))
+)
+ggsave(here::here("Viz", "Women_in_Office_Over_Time_Race.jpg"))
 
 
 # Now let's explore the proportion of women who have been members of the U.S.
@@ -585,15 +670,17 @@ ggsave(here::here("Viz", "Congress_ARIMA_Viz.jpg"))
 
 # First, let's take a look at our all-time leaders. Which states have had
 # the most women representatives/executives in the past 120 years?
-(Women_in_Office_by_State <- wp_selected %>%
-   # Get rid of D.C. for now
-   filter(level != "Territorial/D.C.") %>%
-   # Select our variables to analyze
-   select(id, level, state) %>%
-   # Group by level and state
-   group_by(level, state) %>%
-   # Count everything up!
-   summarise(num = n()) %>%
+wp_state_sums <- wp_selected %>%
+  # Get rid of D.C. for now
+  filter(level != "Territorial/D.C.") %>%
+  # Select our variables to analyze
+  select(id, level, state) %>%
+  # Group by level and state
+  group_by(level, state) %>%
+  # Count everything up!
+  summarise(num = n())
+
+(Women_in_Office_by_State <- wp_state_sums %>%
    # Pick our top 10
    top_n(10, num) %>%
    # Rearrange our dataset
@@ -645,3 +732,56 @@ ggsave(here::here("Viz", "Women_in_Office_by_State.jpg"))
 # representatives compared to smaller states (like Rhode Island, Wyoming, and
 # Delaware). This visualization would be much more representative if I were
 # to normalize by state population.
+
+
+### Map visualization
+# Read in the states and state population data
+main_states <- map_data("state")
+# Change the structure of the main_states object
+main_states <- main_states %>%
+  as_tibble() %>%
+  # Make all of the states lower case to match
+  mutate(region = str_to_title(region)) %>%
+  # Rename state variable to match what's in the other datasets, for joining purposes
+  rename(state = region) %>%
+  print()
+
+state_population <- read.csv("https://raw.githubusercontent.com/ds4stats/r-tutorials/master/intro-maps/data/StatePopulation.csv",
+                            as.is = TRUE) %>%
+  as_tibble() %>%
+  # Make all of the states lower case to match
+  mutate(region = str_to_title(region)) %>%
+  # Rename state variable to match what's in the other datasets, for joining purposes
+  rename(state = region) %>%
+  print()
+
+state_data <- wp_state_sums %>%
+  left_join(state_population) %>%
+  left_join(main_states) %>%
+  print()
+
+# Build our map
+ggplot() +
+  geom_polygon(data = state_data,
+               aes(x = long,
+                   y = lat,
+                   group = group,
+                   fill = num),
+               color = "white") +
+  # Get rid of any axes
+  theme_void() +
+  # Change the fill scale
+  scale_fill_continuous(low = "gray",
+                        high = "slateblue",
+                        limits = c(0, 50))
+
+ggplot() +
+  geom_map(data = state_data,
+           map = state_data,
+           aes(x = long,
+               y = lat,
+               group = group,
+               map_id = state),
+           color = "white",
+           fill = "slateblue",
+           size = .5)
