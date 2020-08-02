@@ -301,7 +301,7 @@ ggsave(here::here("Viz", "Women_in_Office_Over_Time_Party.jpg"))
     ggplot(aes(x = year, y = num, color = race_ethnicity)) +
     geom_line(lwd = 2) +
     # Change our color scales
-    scale_color_brewer(palette = "Paired") +
+    scale_color_brewer(palette = "Set1") +
     # Create a separate chart, with a flexible y-axis, for each level of office
     facet_wrap(~level, scales = "free_y") +
     # Change the theme to classic
