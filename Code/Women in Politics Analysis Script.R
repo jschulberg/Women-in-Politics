@@ -151,7 +151,6 @@ party_colors <- tibble(
   party_grouped = c("Democrat", "Republican", "Other")
 )
 
-
 # Total number of Female Politicians holding office by Level and party
 (Women_in_Office_by_Party <- wp_selected %>%
   # Select our variables to analyze
@@ -176,8 +175,8 @@ party_colors <- tibble(
   # Let's change the names of the axes and title
     xlab("Party") +
     ylab("Number of Female Politicians") +
-    labs(title = "Number of Female Politicians at Various\nLevels of Government",
-         subtitle = paste("Data ranges from", min(wp_selected$year), "to", max(wp_selected$year)),
+    labs(title = "Number of Female Politicians by Party",
+         subtitle = paste("Data, broken out by various levels of government, ranges from", min(wp_selected$year), "to", max(wp_selected$year)),
          caption = "Data is gathered from the Eagleton Institute of Politics,\nCenter for American Women in Politics at\nhttps://cawpdata.rutgers.edu/") +
     # format our title and subtitle
     theme(plot.title = element_text(hjust = 0, color = "slateblue4"),
@@ -320,7 +319,45 @@ ggsave(here::here("Viz", "Women_in_Office_Over_Time_Party.jpg"))
 )
 ggsave(here::here("Viz", "Women_in_Office_Over_Time_Race.jpg"))
 
+### Find the average number of years of service at each level of government
+mu <- plyr::ddply(wp_selected, "level", summarise, years_mean = mean(years_of_service))
 
+# How long have women served, on average, at various levels of government?
+(Years_of_Service <- wp_selected %>%
+    # Select our variables to analyze
+    select(id, level, years_of_service) %>%
+    # Pull only distinct values
+    distinct() %>%
+    # Start our visualization, creating our groups by party affiliation
+    ggplot(aes(x = years_of_service, color = level, fill = level)) +
+    # Use a density plot to better see the distribution of years_of_service
+    geom_density(alpha = .1, lwd = 1) +
+    # Add our average lines, calculated above using ddply
+    geom_vline(data = mu,
+               aes(xintercept = years_mean,
+                   color = level),
+               linetype = "dashed") +
+    # Change the theme to classic
+    theme_classic() +
+    # Change our color scales
+    scale_color_brewer(palette = "Set1") +
+    # Let's change the names of the axes and title
+    labs(title = "Years of Service of Female Politicians",
+         subtitle = paste("Data, broken out by various levels of government, ranges from", min(wp_selected$year), "to", max(wp_selected$year)),
+         x = "Years of Service",
+         y = "Number of Female Politicians",
+         # Change the title of the legend by specifying both the color/fill aesthetics of the viz
+         color = "Level of Government",
+         fill = "Level of Government",
+         caption = "Data is gathered from the Eagleton Institute of Politics,\nCenter for American Women in Politics at\nhttps://cawpdata.rutgers.edu/") +
+    # format our title and subtitle
+    theme(plot.title = element_text(hjust = 0, color = "slateblue4"),
+          plot.subtitle = element_text(hjust = 0, color = "slateblue2", size = 10),
+          plot.caption = element_text(color = "dark gray", size = 10, face = "italic"))
+)
+ggsave(here::here("Viz", "Years_of_Service.jpg"))
+
+### Congress
 # Now let's explore the proportion of women who have been members of the U.S.
 # Senate over time. Unfortunately our dataset only includes the number of
 # women who have held elected office over time, so it's difficult to compare
