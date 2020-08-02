@@ -686,7 +686,6 @@ congress_future <- house_future %>%
 ggsave(here::here("Viz", "Congress_ARIMA_Viz.jpg"))
 
 
-
 # From these graphs, we can see that both ARIMA models took a rather linear
 # approach, assuming a steady increase over time. This makes sense, because
 # ARIMA usually looks for seasonality trends (which our data does NOT have)
