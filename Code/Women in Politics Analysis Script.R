@@ -28,6 +28,8 @@ pacman::p_load("tidyverse", # Used for data wrangling,
                "praise", # Used for positive reinforcement,
                "janitor", # Used for data cleaning,
                "pdftools", # Used for reading PDF files in,
+               "gganimate", # Used for interactive graphic visualizations,
+               "gifski", # Used to create animated gifs
                "forecast", # Used for time series analysis,
                "tseries")  # Used for time series analysis
 
@@ -35,14 +37,10 @@ pacman::p_load("tidyverse", # Used for data wrangling,
 # Bring in the data, taking advantage of the project structure
 # Our base dataset
 female_politicians_data <- readr::read_csv(here::here("Data/women_in_politics.csv"))
-# Read in a pdf of the number of House members over time, by state
-house_members <- here::here("Data/state_apportionment.pdf") %>%
-  pdftools::pdf_text() %>%
-  readr::read_lines()
+census_data <- readr::read_csv(here::here("Data/Census_Structured.csv"))
 
 # Convert to a tibble, my preferred data structure
 (female_politicians_data <- as_tibble(female_politicians_data))
-(house_members <- as_tibble(house_members))
 
 
 ########################################################################
@@ -161,8 +159,9 @@ party_colors <- tibble(
   group_by(level, party_grouped) %>%
   # Count everything up!
   summarise(num = n()) %>%
+  ungroup() %>%
   # Bring our colors back in
-  left_join(party_colors, by = c("party_grouped", "party_grouped")) %>%
+  left_join(party_colors, by = "party_grouped") %>%
   # Start our visualization, creating our groups by party affiliation
   ggplot(aes(x = reorder(party_grouped, num), y = num, fill = party_grouped)) +
   geom_col() +
@@ -796,14 +795,128 @@ state_data <- wp_state_sums %>%
   left_join(main_states) %>%
   print()
 
-# Build our map
+wp_state_yearly <- wp_selected %>%
+  # Get rid of D.C. for now
+  filter(grepl("State Legislative", level)) %>%
+  # Select our variables to analyze
+  select(id, level, state, year) %>%
+  # Group by level and state
+  group_by(level, state, year) %>%
+  # Count everything up!
+  summarise(num = n())
+
+wp_state_filled <- wp_state_yearly %>%
+  # Fill in missing data because there are a lot of years where a state had
+  # no female representatives, so those rows are just "missing" from the
+  # dataset, whereas I'd like them to display a '0'
+  tidyr::complete(year = min(wp_state_yearly$year):max(wp_state_yearly$year),
+                  nesting(level, state),
+                  fill = list(num = 0)
+  ) %>%
+  # Bring in our population data
+  left_join(census_data, by = c("year", "state")) %>%
+  # Get rid of anything before 1900 since we don't have data for that or
+  # anything after 2019
+  filter(year >= 1900 & year < 2020) %>%
+  # Create a new column that normalizes population and multiplies by 1000000
+  # Because some states have 0 population, deal with these accordingly
+  mutate(num_normalized = if_else(population == 0, 0, 1000000*num/population))
+
+# Now create a dataframe that holds the top 10 states and their values from every year
+top_10_by_state <- wp_state_filled %>%
+  group_by(year) %>%
+  mutate(rank = 1.0 * rank(-num_normalized),
+         num_normalized_rel = num_normalized/num_normalized[rank == 1],
+         num_label = paste0(" ", round(1.0 * num_normalized, 1))) %>%
+  group_by(state) %>%
+  filter(rank <= 10) %>%
+  ungroup() %>%
+  # Resort our dataset by year and num_normalized
+  arrange(year, desc(num_normalized))
+
+
+# Start by saving all of our graphs into one object
+static_bar_plot <- top_10_by_state %>%
+  ggplot(
+    aes(rank,
+        group = state_code)
+    ) +
+  geom_tile(aes(y = num_normalized/2,
+                height = num_normalized,
+                width = 0.9),
+            fill = "slateblue") +
+  # Create our labels for states, our x-axis
+  geom_text(aes(y = 0,
+                label = paste(state_code, " ")),
+            vjust = 0.2,
+            hjust = 1,
+            size = 4) +
+  # Create our labels for values
+  geom_label(aes(y = num_normalized,
+                 label = num_label),
+             hjust = 0,
+             size = 4) +
+  coord_flip(clip = "off", expand = FALSE) +
+  scale_y_continuous(labels = scales::comma) +
+  scale_x_reverse() +
+  guides(color = FALSE, fill = FALSE) +
+  # Remove all of the theming so the plot looks simple enough
+  theme(axis.line=element_blank(),
+        axis.text.x=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks=element_blank(),
+        axis.title.x=element_blank(),
+        axis.title.y=element_blank(),
+        legend.position="none",
+        panel.background=element_blank(),
+        panel.border=element_blank(),
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        panel.grid.major.x = element_line( size=.1, color="grey" ),
+        panel.grid.minor.x = element_line( size=.1, color="grey" ),
+        plot.title = element_text(hjust = 0, color = "slateblue4"),
+        plot.subtitle = element_text(hjust = 0, color = "slateblue2", size = 10),
+        plot.caption = element_text(color = "dark gray", size = 10, face = "italic"),
+        plot.background=element_blank(),
+        plot.margin = margin(2, 2, 2, 4, "cm"))
+
+# Now use gganimate to stitch together all of the static plots
+animated_bar_plot <- static_bar_plot +
+  # Split by a discrete variable, year, and animate between the different states
+  transition_states(states = year,
+                    transition_length = 4,
+                    state_length = 2) +
+  # Provides a view as if the background lines are moving as the animation is progressing
+  view_follow(fixed_x = T,
+              fixed_y = T) +
+  # ease_aes("bounce-in") +
+  labs(title = "Top 10 States by Number of Female State Legislators\nYear: {closest_state}",
+       subtitle = "Data is normalized per 1,000,000 Population",
+       caption = "Data is gathered from the Eagleton Institute of Politics,\nCenter for American Women in Politics at\nhttps://cawpdata.rutgers.edu/"
+       )
+
+
+# Now render the plot
+gganimate::animate(
+  plot = animated_bar_plot,
+  # A larger number of frames seems to slow down our viz
+  nframes = 1000,
+  fps = 20,
+  width = 800,
+  height = 600,
+  render = gifski_renderer("Viz/Top 10 States Animation Linear.gif"))
+
+
+### Animated maps
+# Start by saving all of our graphs into one map object
+static_bar_plot <- wp_state_filled %>%
 ggplot() +
-  geom_polygon(data = state_data,
-               aes(x = long,
-                   y = lat,
-                   group = group,
-                   fill = num),
-               color = "white") +
+  geom_polygon(
+    aes(x = long,
+        y = lat,
+        group = group,
+        fill = num),
+    color = "white") +
   # Get rid of any axes
   theme_void() +
   # Change the fill scale
