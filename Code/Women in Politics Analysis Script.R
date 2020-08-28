@@ -24,11 +24,14 @@ pacman::p_load("tidyverse", # Used for data wrangling,
                "readxl", # Used for loading excel files,
                "readr", # Used for working with files,
                "pander", # Used for pretty tables,
+               "kableExtra", # Used for RMarkdown formatting
                "lubridate", # Used for fixing dates,
                "praise", # Used for positive reinforcement,
                "janitor", # Used for data cleaning,
                "pdftools", # Used for reading PDF files in,
                "gganimate", # Used for interactive graphic visualizations,
+               "mapproj", # Used for visualizing maps
+               "transformr", # Used to animate maps
                "gifski", # Used to create animated gifs
                "forecast", # Used for time series analysis,
                "tseries")  # Used for time series analysis
@@ -94,15 +97,6 @@ wp_minmax <- wp_cleaned %>%
   print()
 
 
-### House Dataset
-# Let's clean up our dataset of the number of total members in the House
-# by State over time
-house_cleaned <- house_members %>%
-  str_squish() %>%
-  str_split(pattern = " ") %>%
-  unlist() %>%
-  as_tibble() %>%
-  print()
 
 
 ########################################################################
@@ -242,7 +236,7 @@ ggsave(here::here("Viz", "Women_in_Office_Over_Time.jpg"))
   # Count everything up!
   summarise(num = n()) %>%
   # Bring our colors back in
-  left_join(party_colors, by = c("party_grouped", "party_grouped")) %>%
+  left_join(party_colors, by = "party_grouped") %>%
   # Because it'll skew the data, let's get rid of anything from the current
   # year or later
   filter(year < year(Sys.Date())) %>%
@@ -258,7 +252,7 @@ ggsave(here::here("Viz", "Women_in_Office_Over_Time.jpg"))
   # Let's change the names of the axes and title
   xlab("Year") +
   ylab("Number of Female Politicians") +
-  labs(title = "Number of Female Politicians at Various\nLevels of Government over Time",
+  labs(title = "Number of Female Politicians by Party",
        subtitle = paste("Data ranges from", min(wp_selected$year), "to", max(wp_selected$year)),
        caption = "Data is gathered from the Eagleton Institute of Politics,\nCenter for American Women in Politics at\nhttps://cawpdata.rutgers.edu/") +
   # format our title and subtitle
@@ -300,7 +294,7 @@ ggsave(here::here("Viz", "Women_in_Office_Over_Time_Party.jpg"))
     ggplot(aes(x = year, y = num, color = race_ethnicity)) +
     geom_line(lwd = 2) +
     # Change our color scales
-    scale_color_brewer(palette = "Set1") +
+    scale_color_brewer(name = "Race", palette = "Set1") +
     # Create a separate chart, with a flexible y-axis, for each level of office
     facet_wrap(~level, scales = "free_y") +
     # Change the theme to classic
@@ -308,7 +302,7 @@ ggsave(here::here("Viz", "Women_in_Office_Over_Time_Party.jpg"))
     # Let's change the names of the axes and title
     xlab("Year") +
     ylab("Number of Female Politicians") +
-    labs(title = "Number of Female Politicians at Various\nLevels of Government over Time",
+    labs(title = "Number of Female Politicians by Race",
          subtitle = paste("Data ranges from", min(wp_selected$year), "to", max(wp_selected$year)),
          caption = "Data is gathered from the Eagleton Institute of Politics,\nCenter for American Women in Politics at\nhttps://cawpdata.rutgers.edu/") +
     # format our title and subtitle
@@ -607,7 +601,7 @@ house_future <- house_full %>%
 
 # Let's plot our data
 (House_ARIMA_Viz <- ggplot(house_future, aes(x = year, y = politicians, color = period)) +
-  geom_line(lwd = 1) +
+  geom_line(lwd = 2) +
   # Add a reference line for when we achieve full parity
   geom_vline(xintercept = house_parity,
              color = "slateblue1",
@@ -769,31 +763,6 @@ ggsave(here::here("Viz", "Women_in_Office_by_State.jpg"))
 # to normalize by state population.
 
 
-### Map visualization
-# Read in the states and state population data
-main_states <- map_data("state")
-# Change the structure of the main_states object
-main_states <- main_states %>%
-  as_tibble() %>%
-  # Make all of the states lower case to match
-  mutate(region = str_to_title(region)) %>%
-  # Rename state variable to match what's in the other datasets, for joining purposes
-  rename(state = region) %>%
-  print()
-
-state_population <- read.csv("https://raw.githubusercontent.com/ds4stats/r-tutorials/master/intro-maps/data/StatePopulation.csv",
-                            as.is = TRUE) %>%
-  as_tibble() %>%
-  # Make all of the states lower case to match
-  mutate(region = str_to_title(region)) %>%
-  # Rename state variable to match what's in the other datasets, for joining purposes
-  rename(state = region) %>%
-  print()
-
-state_data <- wp_state_sums %>%
-  left_join(state_population) %>%
-  left_join(main_states) %>%
-  print()
 
 wp_state_yearly <- wp_selected %>%
   # Get rid of D.C. for now
@@ -889,9 +858,8 @@ animated_bar_plot <- static_bar_plot +
   # Provides a view as if the background lines are moving as the animation is progressing
   view_follow(fixed_x = T,
               fixed_y = T) +
-  # ease_aes("bounce-in") +
   labs(title = "Top 10 States by Number of Female State Legislators\nYear: {closest_state}",
-       subtitle = "Data is normalized per 1,000,000 Population",
+       subtitle = "Data is normalized by state per 1,000,000 Population (i.e. 50 means\nfor every 1,000,000 people, there are 50 women who were State Legislators",
        caption = "Data is gathered from the Eagleton Institute of Politics,\nCenter for American Women in Politics at\nhttps://cawpdata.rutgers.edu/"
        )
 
@@ -900,37 +868,98 @@ animated_bar_plot <- static_bar_plot +
 gganimate::animate(
   plot = animated_bar_plot,
   # A larger number of frames seems to slow down our viz
+  nframes = 750,
+  fps = 20,
+  width = 800,
+  height = 600,
+  render = gifski_renderer("Viz/Top 10 States Animation.gif"))
+
+
+### Map visualization
+# Read in the states data, which includes the longitude/latitude points I need
+main_states <- map_data("state")
+# Change the structure of the main_states object
+main_states <- main_states %>%
+  as_tibble() %>%
+  # Make all of the states lower case to match
+  mutate(region = str_to_title(region)) %>%
+  # Rename state variable to match what's in the other datasets, for joining purposes
+  rename(state = region) %>%
+  print()
+
+# Join our state longitude/latitude data into our main dataframe
+wp_state_joined <- wp_state_filled %>%
+  merge(main_states, by = "state") %>%
+  as_tibble()
+
+
+### Animated maps
+# Test map
+# ggplot(data = main_states,
+#             mapping = aes(x = long, y = lat,
+#                           group = group, fill = state)) +
+#   geom_polygon(color = "gray90", size = 0.1) +
+#   coord_map(projection = "albers", lat0 = 39, lat1 = 45) +
+#   guides(fill = FALSE) +
+#   theme_void()
+#
+# wp_2015 <- wp_state_joined %>%
+#   as_tibble() %>%
+#   filter(year > 1990)
+
+# Let's turn our bar charts into maps. We'll use our original data frame so
+# get more than the top 10 states (ideally we get all)
+state_map <-  ggplot(data = wp_state_joined,
+                     aes(x = long,
+                         y = lat)) +
+  geom_polygon(aes(group = group,
+                   fill = num_normalized),
+               color = "black") +
+  # Note: We can only use the albers projection if we're looking at just the U.S.
+  # If we wanted to expand across the Atlantic, we'd have to use Mercator
+  coord_map(projection = "albers", lat0 = 45.5, lat1 = 29.5) +
+  guides(fill = FALSE) +
+  # Remove all of the theming so the plot looks simple enough
+  theme(axis.line=element_blank(),
+        axis.text.x=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks=element_blank(),
+        axis.title.x=element_blank(),
+        axis.title.y=element_blank(),
+        # legend.position="none",
+        panel.background=element_blank(),
+        panel.border=element_blank(),
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        plot.title = element_text(hjust = 0, color = "slateblue4"),
+        plot.subtitle = element_text(hjust = 0, color = "slateblue2", size = 10),
+        plot.caption = element_text(color = "dark gray", size = 10, face = "italic"),
+        plot.background=element_blank()) +
+  # Change the fill scale
+  guides(fill = guide_legend(title = "Scale", reverse = T)) +
+  scale_fill_continuous(low = "white",
+                        high = "slateblue",
+                        limits = c(0, 100))
+
+# Now use gganimate to stitch together all of the static plots
+animated_map_plot <- state_map +
+  # Split by a discrete variable, year, and animate between the different states
+  transition_states(states = year,
+                    transition_length = 4,
+                    state_length = 2) +
+  labs(title = "Number of Female State Legislators by State\nYear: {closest_state}",
+       subtitle = "Data is normalized by state per 1,000,000 Population (i.e. 50 means for every\n1,000,000 people, there are 50 women who were State Legislators",
+       caption = "Data is gathered from the Eagleton Institute of Politics,\nCenter for American Women in Politics at\nhttps://cawpdata.rutgers.edu/"
+  )
+
+# Now render the plot
+gganimate::animate(
+  plot = animated_map_plot,
+  # A larger number of frames seems to slow down our viz
   nframes = 1000,
   fps = 20,
   width = 800,
   height = 600,
-  render = gifski_renderer("Viz/Top 10 States Animation Linear.gif"))
+  render = gifski_renderer("Viz/States Map Animation.gif"))
 
 
-### Animated maps
-# Start by saving all of our graphs into one map object
-static_bar_plot <- wp_state_filled %>%
-ggplot() +
-  geom_polygon(
-    aes(x = long,
-        y = lat,
-        group = group,
-        fill = num),
-    color = "white") +
-  # Get rid of any axes
-  theme_void() +
-  # Change the fill scale
-  scale_fill_continuous(low = "gray",
-                        high = "slateblue",
-                        limits = c(0, 50))
-
-ggplot() +
-  geom_map(data = state_data,
-           map = state_data,
-           aes(x = long,
-               y = lat,
-               group = group,
-               map_id = state),
-           color = "white",
-           fill = "slateblue",
-           size = .5)
