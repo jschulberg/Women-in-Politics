@@ -868,7 +868,7 @@ animated_bar_plot <- static_bar_plot +
 gganimate::animate(
   plot = animated_bar_plot,
   # A larger number of frames seems to slow down our viz
-  nframes = 750,
+  nframes = 600,
   fps = 20,
   width = 800,
   height = 600,
@@ -956,7 +956,7 @@ animated_map_plot <- state_map +
 gganimate::animate(
   plot = animated_map_plot,
   # A larger number of frames seems to slow down our viz
-  nframes = 1000,
+  nframes = 600,
   fps = 20,
   width = 800,
   height = 600,
