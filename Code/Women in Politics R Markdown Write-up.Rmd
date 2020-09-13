@@ -1,0 +1,926 @@
+---
+title: "Women in Politics"
+author: "Justin S."
+date: "`r Sys.Date()`"
+output:
+  prettydoc::html_pretty:
+    theme: architect
+    highlight: github
+code_folding: TRUE
+---
+
+It all started in Montana. In 1916, Jeannette Rankin, a peace activist and a strong advocate for women's suffrage, broke down centuries-long barriers by becoming the first woman elected to Congress. Since then, 366 women have served in U.S. Congress, and thousands more in various elected and executive offices at the state-level.
+
+In this post, we will analyze the Women in Politics dataset published by the [Eagleton Institute of Politics' Center for American Women and Politics](https://cawpdata.rutgers.edu/). CAWP, the nation's leading source of scholarly research and data related to women's political participation in the United States, has gathered tens of thousands of records of women holding political (both elected and appointed) office across the United States, dating back to the late 1800s, and made them all available in their centralized Women in Political Office Database. We will use this data along with a variety of exploratory and modeling techniques to answer the following questions:  
+
+  - How many women have held political office by level of Government?  
+  - Is one political party more apt to be represented by women?  
+  - Does race add a layer of complexity to gender representation for political office?  
+  - How long do women serve in office?  
+  - When will the U.S. House of Representatives and Senate achieve full gender parity?  
+  - Is there a geographic component to equitable gender representation? Are there more female officeholders in certain states?   
+
+Let's start by applying some basic data cleaning/manipulation techniques, dealing with missing (NA) values, and touching up our dataset. 
+
+```{r fig.align='center', fig.height=6, fig.width=6, message=FALSE, warning=FALSE, include=FALSE}
+# Set our plot specifications for the rest of the document.
+knitr::opts_chunk$set(fig.width = 9,
+                      fig.height = 6,
+                      fig.align = "center",
+                      # Set our code specifications for the rest of the document
+                      echo = F,
+                      warning = F,
+                      message = F)
+```
+
+
+```{r set-up_and_clean_data, include=FALSE}
+###########################################################################
+## Set Up -----------------------------------------------------------------
+###########################################################################
+# Bring in packages
+suppressMessages(library("pacman"))
+pacman::p_load("tidyverse", # Used for data wrangling,
+               "tidyr", # Used for data cleaning,
+               "ggplot2", # Used for visualizations,
+               "maps", # Used for map-based visualizations
+               "readxl", # Used for loading excel files,
+               "readr", # Used for working with files,
+               "pander", # Used for pretty tables,
+               "lubridate", # Used for fixing dates,
+               "kableExtra", # Used for RMarkdown formatting
+               "praise", # Used for positive reinforcement,
+               "janitor", # Used for data cleaning,
+               "pdftools", # Used for reading PDF files in,
+               "gganimate", # Used for interactive graphic visualizations,
+               "mapproj", # Used for visualizing maps
+               "transformr", # Used to animate maps
+               "gifski", # Used to create animated gifs
+               "forecast", # Used for time series analysis,
+               "tseries")  # Used for time series analysis
+
+
+# Bring in the data, taking advantage of the project structure
+# Our base dataset
+female_politicians_data <- readr::read_csv(here::here("Data/women_in_politics.csv"))
+census_data <- readr::read_csv(here::here("Data/Census_Structured.csv"))
+
+# Convert to a tibble, my preferred data structure
+(female_politicians_data <- as_tibble(female_politicians_data))
+
+
+########################################################################
+## Clean Data ----------------------------------------------------------
+########################################################################
+# Some of the data is a bit messy, so let's clean things up
+wp_cleaned <- female_politicians_data %>%
+  # Clean up our column names so they're in a more standard format
+  clean_names() %>%
+  # Create and clean up a few columns
+  # The state variable is of the form "Michigan - MI", so let's break this
+  # into something more readable
+  separate(state,
+           into = c("state", "state_abb"),
+           sep = "-") %>%
+  mutate(
+    # The state columns now have a big of extra white space
+    state = str_trim(state),
+    state_abb = str_trim(state_abb),
+    # Because the short code for Northern Mariana Islands (MI) matches
+    # that of Michigan, let's change the code
+    state_abb = if_else(state == "Northern Mariana Islands", "NMI", state_abb),
+    # Create a full name field
+    full_name = if_else(is.na(middle_name),
+                        str_c(first_name, last_name, sep = " "),
+                        str_c(first_name, middle_name, last_name, sep = " ")),
+    # There are a lot of small political parties (outside of Dem/Repub) that
+    # appear in the dataset, so let's create a grouped column
+    party_grouped = case_when(
+      party == "Democrat" ~ "Democrat",
+      party == "Republican" ~ "Republican",
+      TRUE ~ "Other")
+  ) %>%
+  # Reorder columns to see the result
+  select(id, contains("name"), contains("state"), everything())
+
+# Our dataset is structured such that each row corresponds to one year that
+# a woman held elected office. Let's create two new variables:
+#   min_year: the first year the woman held office
+#   max_year: the last year the woman held office
+wp_minmax <- wp_cleaned %>%
+  group_by(id) %>%
+  mutate(min_year = min(year),
+         max_year = max(year),
+         years_of_service = max(year) - min(year),
+         years_in_office = str_c(min(year), max(year), sep = "-")) %>%
+  # Reorder columns to see the result
+  select(id, contains("year"), contains("name"), everything()) %>%
+  ungroup()
+
+
+########################################################################
+## Explore NAs ---------------------------------------------------------
+########################################################################
+# Start by creating a dataframe that will store our missing values
+missing_vals <- wp_minmax %>%
+  # Pivot the dataset so all of our variables are in two columns
+  gather(key = "key", value = "val") %>%
+  # Figure out which values are missing
+  mutate(is_missing = is.na(val)) %>%
+  # Group by our variable and whether or not a value is missing
+  group_by(key, is_missing) %>%
+  # Count the number of values missing for each variable
+  summarise(num_missing = n()) %>%
+  # Only pull in the variables that are missing
+  filter(is_missing == T) %>%
+  # Get rid of our logical field
+  select(-is_missing) %>%
+  # Sort our values descending
+  arrange(desc(num_missing)) %>%
+  # Ungroup our results
+  ungroup()
+
+wp_selected <- wp_minmax %>%
+  select(-district)
+
+```
+
+```{r view_data_with_kable}
+# In any kable outputs, display NAs as blanks
+opts <- options(knitr.kable.NA = "")
+
+wp_selected %>% 
+  head(50) %>%
+  # Fix up the headers by replacing the underscores with spaces
+  rename_all(funs(str_replace_all(., "_", " "))) %>% 
+  # Make everything proper capitalization
+  rename_all(funs(str_to_title)) %>% 
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover"),
+                full_width = F,
+                font_size = 10) %>%
+  # Make the header row bold and black so it's easier to read
+  row_spec(0, bold = T, color = "black") %>% 
+  scroll_box(height = "400px", width = "100%")
+  # pander()
+```
+  
+After cleaning up the data a bit and imputing some new columns, we have our dataset! In it, one row corresponds to a woman having held a given political office (either elected or appointed) for one year. If a woman has held a given political office for, say, five years, they will appear as five separate rows in the dataset.
+
+As part of my set-up, I took a look at the number of missing (null) values for each variable (field). Based on this, I removed the "District" column, which is entirely null in the dataset I downloaded, and thus provides us no value. Middle name, which is about 1/3 null, has been left in the dataset since it's not an essential variable.
+
+Now that we have our data, let's start to explore it.
+
+``` {r total_viz}
+########################################################################
+## Viz Time ------------------------------------------------------------
+########################################################################
+# Before we jump into visualizations, let's define our political party
+# colors
+party_colors <- tibble(
+  party_colors = c("#2E74C0", "#CB454A", "#999999"),
+  party_grouped = c("Democrat", "Republican", "Other")
+)
+
+# Total number of Female Officeholders holding office by Level and party
+(Women_in_Office_by_Party <- wp_selected %>%
+  # Select our variables to analyze
+  select(id, level, party_grouped) %>%
+  # Pull only distinct values
+  distinct() %>%
+  # Group by level and political party
+  group_by(level, party_grouped) %>%
+  # Count everything up!
+  summarise(num = n()) %>%
+  ungroup() %>%
+  # Bring our colors back in
+  left_join(party_colors, by = "party_grouped") %>%
+  # Start our visualization, creating our groups by party affiliation
+  ggplot(aes(x = reorder(party_grouped, num), y = num, fill = party_grouped)) +
+  geom_col() +
+  # Change our color scales
+  scale_fill_manual(name = "Party", values = c("#2E74C0", "#999999", "#CB454A")) +
+  # Create a separate chart, with a flexible y-axis, for each level of office
+  facet_wrap(~level, scales = "free_y") +
+  # Change the theme to classic
+  theme_classic() +
+  # Let's change the names of the axes and title
+    xlab("Party") +
+    ylab("Number of Female Officeholders") +
+    labs(title = "Number of Female Officeholders by Level of Government",
+         subtitle = paste("Cumulative data, broken out by political party, from", min(wp_selected$year), "to", max(wp_selected$year)),
+         caption = "Data is gathered from the Eagleton Institute of Politics,\nCenter for American Women in Politics at\nhttps://cawpdata.rutgers.edu/") +
+    # format our title and subtitle
+    theme(plot.title = element_text(hjust = 0, color = "slateblue4"),
+          plot.subtitle = element_text(hjust = 0, color = "slateblue2", size = 10),
+          plot.caption = element_text(color = "dark gray", size = 10, face = "italic"))
+  )
+```
+
+In absolute terms, most of the women who have held office have done so at the state legislative level, which makes sense given that there are more seats available at that level. Interestingly enough, in U.S. Territories/D.C., a lot of women outside the two major parties have held office.
+
+This is great to see total numbers, but our data, depending on which level of government we're talking about, can span 130 years! Let's breakout our totals over time to look for trends.
+
+```{r total_over_time}
+# Let's break out these numbers of Female Officeholders holding office over time
+(Women_in_Office_Over_Time <- wp_selected %>%
+    # Select our variables to analyze
+    select(id, level, year) %>%
+    # Pull only distinct values
+    distinct() %>%
+    # Group by level and political party
+    group_by(year, level) %>%
+    # Count everything up!
+    summarise(num = n()) %>%
+    # Because it'll skew the data, let's get rid of anything from the current
+    # year or later
+    filter(year < year(Sys.Date())) %>%
+    # Start our visualization, creating our groups by party affiliation
+    ggplot(aes(x = year, y = num)) +
+    geom_line(lwd = 1.25, color = "slateblue", alpha = .8) +
+    # Create a separate chart, with a flexible y-axis, for each level of office
+    facet_wrap(~level, scales = "free_y") +
+    # Change the theme to classic
+    theme_classic() +
+    # Let's change the names of the axes and title
+    xlab("Year") +
+    ylab("Number of Female Officeholders") +
+    labs(title = "Number of Female Officeholders at Various Levels of Government over Time",
+         subtitle = paste("Data ranges from", min(wp_selected$year), "to", max(wp_selected$year)),
+         caption = "Data is gathered from the Eagleton Institute of Politics,\nCenter for American Women in Politics at\nhttps://cawpdata.rutgers.edu/") +
+    # format our title and subtitle
+    theme(plot.title = element_text(hjust = 0, color = "slateblue4"),
+          plot.subtitle = element_text(hjust = 0, color = "slateblue2", size = 10),
+          plot.caption = element_text(color = "dark gray", size = 10, face = "italic"))
+)
+
+```
+
+Here are some key takeaways:  
+  1. The number of women holding political office has been growing incredibly fast over the past few decades.  
+  2. Most of the positions held are at the State Legislative level, which makes sense given the greater number of positions open at that level.  
+  3. U.S. Territories and D.C. are late to the game, not having any semblance of gender representation until the 2000's.  
+  
+Let's look to see if these trends have differed based on political party.
+
+``` {r total_over_time_by_party}
+# Let's break out these numbers of Female Officeholders holding office over time by party
+(Women_in_Office_Over_Time_Party <- wp_selected %>%
+  # Select our variables to analyze
+  select(id, level, party_grouped, year) %>%
+  # Pull only distinct values
+  distinct() %>%
+  # Group by level and political party
+  group_by(year, level, party_grouped) %>%
+  # Count everything up!
+  summarise(num = n()) %>%
+  # Bring our colors back in
+  left_join(party_colors, by = "party_grouped") %>%
+  # Because it'll skew the data, let's get rid of anything from the current
+  # year or later
+  filter(year < year(Sys.Date())) %>%
+  # Start our visualization, creating our groups by party affiliation
+  ggplot(aes(x = year, y = num, color = party_grouped)) +
+  geom_line(lwd = 2) +
+  # Change our color scales
+  scale_color_manual(name = "Party", values = c("#2E74C0", "#999999", "#CB454A")) +
+  # Create a separate chart, with a flexible y-axis, for each level of office
+  facet_wrap(~level, scales = "free_y") +
+  # Change the theme to classic
+  theme_classic() +
+  # Let's change the names of the axes and title
+  xlab("Year") +
+  ylab("Number of Female Officeholders") +
+  labs(title = "Number of Female Officeholders by Party",
+       subtitle = paste("Data ranges from", min(wp_selected$year), "to", max(wp_selected$year)),
+       caption = "Data is gathered from the Eagleton Institute of Politics,\nCenter for American Women in Politics at\nhttps://cawpdata.rutgers.edu/") +
+  # format our title and subtitle
+  theme(plot.title = element_text(hjust = 0, color = "slateblue4"),
+        plot.subtitle = element_text(hjust = 0, color = "slateblue2", size = 10),
+        plot.caption = element_text(color = "dark gray", size = 10, face = "italic"))
+)
+
+```
+
+For female officeholders in Congress, Democrats and Republicans were in lockstep until 1990, when Democrats took off at a much faster rate.
+
+How does gender representation in political office change not by political party, but by race? Let's take a look. 
+
+```{r total_over_time_by_race}
+(Women_in_Office_Over_Time_Race <- wp_selected %>%
+    # We actually have a facet of our data that race/ethnicity is broken out
+    # by extremely specific categories, which overwhelms the data viz. Let's
+    # combine any woman who is multiracial into the same cateogry
+    mutate(new = case_when(
+      str_detect(race_ethnicity, "Multiracial") ~ TRUE,
+      TRUE ~ FALSE),
+      race_ethnicity = if_else(new == T, "Multiracial", race_ethnicity),
+      ) %>%
+    # Select our variables to analyze
+    select(id, level, race_ethnicity, year) %>%
+    # Drop any data that is unavailable
+    filter(race_ethnicity != "Unavailable") %>%
+    # Pull only distinct values
+    distinct() %>%
+    # Group by level and political party
+    group_by(year, level, race_ethnicity) %>%
+    # Count everything up!
+    summarise(num = n()) %>%
+    # Because it'll skew the data, let's get rid of anything from the current
+    # year or later
+    filter(year < year(Sys.Date())) %>%
+    # Start our visualization, creating our groups by party affiliation
+    ggplot(aes(x = year, y = num, color = race_ethnicity)) +
+    geom_line(lwd = 2) +
+    # Change our color scales
+    scale_color_brewer(name = "Race", palette = "Set1") +
+    # Create a separate chart, with a flexible y-axis, for each level of office
+    facet_wrap(~level, scales = "free_y") +
+    # Change the theme to classic
+    theme_classic() +
+    # Let's change the names of the axes and title
+    xlab("Year") +
+    ylab("Number of Female Officeholders") +
+    labs(title = "Number of Female Officeholders by Race",
+         subtitle = paste("Data ranges from", min(wp_selected$year), "to", max(wp_selected$year)),
+         caption = "Data is gathered from the Eagleton Institute of Politics,\nCenter for American Women in Politics at\nhttps://cawpdata.rutgers.edu/") +
+    # format our title and subtitle
+    theme(plot.title = element_text(hjust = 0, color = "slateblue4"),
+          plot.subtitle = element_text(hjust = 0, color = "slateblue2", size = 10),
+          plot.caption = element_text(color = "dark gray", size = 10, face = "italic"))
+)
+```
+
+We can see rather clearly that white women dominate across the board (except in U.S. Territories/D.C., which is dominated by women of Hispanic/Latina ethnicity). This would not be too surprising given that places like Puerto Rico are include in this group. The difference is clearest in Statewide Executive positions, which are often not elected (Secretary of State, Treasurer, Superintendent of Public Instruction, Lt. Governor, etc.) and instead appointed. 
+
+Let's take a look at how long individual female officeholders have held their respective office. We'll do so by utilizing a density plot, which shows the distribution of the number of years a given politician has served in their respective office.
+
+```{r years_of_service}
+# Find the average number of years of service at each level of government
+mu <- plyr::ddply(wp_selected, "level", summarise, years_mean = mean(years_of_service))
+
+(Years_of_Service <- wp_selected %>%
+    # Select our variables to analyze
+    select(id, level, years_of_service) %>%
+    # Pull only distinct values
+    distinct() %>%
+    # Start our visualization, creating our groups by party affiliation
+    ggplot(aes(x = years_of_service, color = level, fill = level)) +
+    # Use a density plot to better see the distribution of years_of_service
+    geom_density(alpha = .05, lwd = 1) +
+    # Add our average lines, calculated above using ddply
+    geom_vline(data = mu,
+               aes(xintercept = years_mean,
+               color = level),
+               linetype = "dashed") +
+    # Change the theme to classic
+    theme_classic() +
+    # Change our color scales
+    scale_color_brewer(palette = "Set1") +
+    # Let's change the names of the axes and title
+    labs(title = "Years of Service of Female Officeholders",
+         subtitle = paste("Data, broken out by various levels of government, ranges from", min(wp_selected$year), "to", max(wp_selected$year)),
+         x = "Years of Service",
+         y = "Female Officeholders (%)",
+         # Change the title of the legend by specifying both the color/fill aesthetics of the viz
+         color = "Level of Government",
+         fill = "Level of Government",
+         caption = "Data is gathered from the Eagleton Institute of Politics,\nCenter for American Women in Politics at\nhttps://cawpdata.rutgers.edu/") +
+    # format our title and subtitle
+    theme(plot.title = element_text(hjust = 0, color = "slateblue4"),
+          plot.subtitle = element_text(hjust = 0, color = "slateblue2", size = 10),
+          plot.caption = element_text(color = "dark gray", size = 10, face = "italic"))
+)
+```
+
+From this, we can see the distribution of the number of years a given politician has held her respective office over the past 120 years, broken out by different levels of government. In particular, we can clearly see that the women who have held office in D.C. have done so for a very short period of time: **`r mu %>% filter(level == "Territorial/D.C.") %>% select(years_mean) %>% round(0) %>% as.numeric()` years**. This makes sense given how women have only been holding office in D.C. since the early 2000's. On the other end of the spectrum, women in Congress have held their positions for a much more uniform amount of time, averaging about **`r mu %>% filter(level == "Federal/Congress") %>% select(years_mean) %>% round(0) %>% as.numeric()` years** in office!
+
+Now let's hone in on the Federal/Congressional piece of the puzzle. Specifically, let's look at the proportion of women who have been members of the U.S. Senate/House of Representatives over time. Unfortunately our dataset only includes the number of women who have held political office over time, so it's difficult to compare that to the number of men who have held office over time at all the levels of government, except for the U.S. Senate, which has had 100 members since 1959, and the U.S. House of Representatives, which has had 435 members since 1959. Thus, we'll focus our analysis to 1959 and after.
+
+``` {r congress_genders_by_proportion}
+senate_composition <- wp_selected %>%
+  # Filter to only our U.S. Senators after 1958
+  filter(level == "Federal/Congress" &
+           position == "U.S. Senator" &
+           year > 1958 &
+           year < year(Sys.Date())) %>%
+  # Group by year
+  group_by(year) %>%
+  # Count everything up!
+  summarise(female_senators = n(),
+            male_senators = 100 - n()) %>%
+  # Pivot our dataset longer so we have number of senators in one column
+  # instead of two
+  pivot_longer(cols = contains("senators"),
+               names_to = "gender",
+               values_to = "politicians") %>%
+  # Clean up the gender column since it has "_senators" at the end of it
+  mutate(gender = str_remove(gender, pattern = "_.*"),
+         # Make the first letter upper case
+         gender = str_to_title(gender),
+         # Make it a factor
+         gender = factor(gender, levels = c("Male", "Female")),
+         # Let's create one column to identify this dataset as Senate
+         branch = "U.S. Senate")
+
+# Let's do the same thing, but for U.S. House of Representatives, which has
+# 435 members every year
+house_composition <- wp_selected %>%
+  # Filter to only our U.S. House of Representatives members after 1958
+  filter(level == "Federal/Congress" &
+           position == "U.S. Representative" &
+           year > 1958 &
+           year < year(Sys.Date())) %>%
+  # Group by year
+  group_by(year) %>%
+  # Count everything up!
+  summarise(female_reps = n(),
+            male_reps = 435 - n()) %>%
+  # Pivot our dataset longer so we have number of reps in one column
+  # instead of two
+  pivot_longer(cols = contains("reps"),
+               names_to = "gender",
+               values_to = "politicians") %>%
+  # Clean up the gender column since it has "_reps" at the end of it
+  mutate(gender = str_remove(gender, pattern = "_.*"),
+         # Make the first letter upper case
+         gender = str_to_title(gender),
+         # Make it a factor
+         gender = factor(gender, levels = c("Male", "Female")),
+         # Let's create one column to identify this dataset as Senate
+         branch = "U.S. House of Representatives") 
+
+# Bind our two datasets together
+congress_composition <- bind_rows(house_composition, senate_composition)
+
+# run our visualization
+(US_Congressmembers_by_Gender <- ggplot(congress_composition, aes(x = year, y = politicians, fill = gender)) +
+  # Let's make it a column graph and change the color
+  geom_area(alpha = .9, color = "gray") +
+  # Let's create separate graphs for House vs. Senate
+  facet_wrap(~ branch, scales = "free_y") +
+  # Change the theme to classic
+  theme_classic() +
+  # Change the colors we're working with
+  scale_fill_manual(name = "Gender", values = c("gray", "slateblue")) +
+  # Let's change the names of the axes and title
+  xlab("Year") +
+  ylab("Number of Congress Members") +
+  labs(title = "Number of U.S. Congress Members by Gender",
+       subtitle = paste("Data ranges from", min(senate_composition$year), "to", max(senate_composition$year)),
+       caption = "Data is gathered from the Eagleton Institute of Politics,\nCenter for American Women in Politics at\nhttps://cawpdata.rutgers.edu/") +
+  # format our title and subtitle
+  theme(plot.title = element_text(hjust = 0, color = "slateblue4"),
+        plot.subtitle = element_text(hjust = 0, color = "slateblue2", size = 10),
+        plot.caption = element_text(color = "dark gray", face = "italic", size = 10))
+  )
+
+```
+
+From this, we can see that in both chambers of Congress, the share of female representatives has increased steadily, with a significant bump in the 1990s and a steady increase from there on out. The next question that comes to my head is:  
+
+*When will we achieve a 50-50 parity in each chamber of Congress?*  
+
+## Time Series Analysis (ARIMA)  
+In this next section, I'd like to use an ARIMA (Auto Regressive Integrated Moving Average) time forecasting model to determine when each chamber of the U.S. Congress will achieve full gender parity. What does that mean in plain English? Can we use data science methods to project when the Senate will have 50 female members and the House 217 (435/2) female members?
+
+```{r senate_arima}
+senate_dates <- congress_composition %>%
+  filter(gender == "Female") %>%
+  filter(branch == "U.S. Senate") 
+
+# There are a bunch of years that don't have any Female Officeholders, so
+# let's impute the value 0 for them. Start by determining what the total
+# number of years should look like
+senate_full <- senate_dates %>%
+  tidyr::complete(year = min(senate_dates$year):max(senate_dates$year),
+                  fill = list(gender = "Female",
+                              politicians = 0,
+                              branch = "U.S. Senate"
+                  )
+  ) %>%
+  # Create a date column out of the year variable
+  mutate(date = as.Date(paste(year, "01", "01", sep = "-")))
+
+# Create a time series object from our date values. We'll start our time
+# series object from the first year (column) in our data frame and end at
+# the final year in our dataset.
+senate_ts <- ts(data = senate_full$politicians,
+                start = min(senate_full$year),
+                end = max(senate_full$year))
+
+# Use auto.arima to build a regression model with ARIMA
+arima_senate <- auto.arima(senate_ts)
+
+# Let's build out our dataset 50 years into the future to forecast any increase
+num_years <- 81
+# Use the forecast function to build our predictions
+senate_forecast <- forecast(arima_senate,
+                            h = num_years # Number of years to forecast
+                            )
+
+# Let's structure these forecasted values in the same form as our dataset,
+# and add an indicator variable in
+forecast_full <- tibble(
+  politicians = senate_forecast$mean,
+  year = seq(max(senate_full$year) + 1, max(senate_full$year) + num_years, 1),
+  gender = "Female",
+  branch = "U.S. Senate",
+  date = as.Date(paste(year, "01", "01", sep = "-")),
+  period = "future" # indicator variable
+)
+
+senate_future <- senate_full %>%
+  mutate(period = "historic") %>%
+  bind_rows(forecast_full) 
+
+
+
+```
+
+By building an ARIMA model with a trend component, we can esimate the increase in the number of female officeholders in Congress over the next 80 years:
+
+```{r senate_arima_viz}
+senate_parity <- min(senate_future$year[senate_future$politicians > 50])
+
+(Senate_ARIMA_Viz <- ggplot(senate_future, aes(x = year, y = politicians, color = period)) +
+  geom_line(lwd = 2) +
+  # Add a reference line for when we achieve full parity
+  geom_vline(xintercept = senate_parity,
+             color = "slateblue1",
+             linetype = "dashed") +
+  geom_hline(yintercept = 50,
+             color = "slateblue1",
+             linetype = "dashed") +
+  # Change the theme to classic
+  theme_classic() +
+  # Change the colors we're working with
+  scale_color_manual(name = "Time Period",
+                     values = c("slateblue", "gray"),
+                     labels = c("Predicted", "Actual")) +
+  # Let's change the names of the axes and title
+  xlab("Year") +
+  ylab("Number of Senators") +
+  labs(title = "Number of Female U.S. Senators over Time",
+       subtitle = paste("Data ranges from ", min(senate_future$year), " to ", max(senate_future$year), ". The dashed lines represent\nthe year in which each chamber achieves full gender parity.", sep = ""),
+       caption = "Data is gathered from the Eagleton Institute of Politics,\nCenter for American Women in Politics at\nhttps://cawpdata.rutgers.edu/") +
+  # format our title and subtitle
+  theme(plot.title = element_text(hjust = 0, color = "slateblue4"),
+        plot.subtitle = element_text(hjust = 0, color = "slateblue2", size = 10),
+        plot.caption = element_text(color = "dark gray", face = "italic", size = 10))
+)
+```
+
+According to the Senate ARIMA model, the U.S. Senate will first achieve full gender parity in the year **`r senate_parity`**.
+
+Let's now do the same thing for the House.
+```{r house_arima}
+house_dates <- congress_composition %>%
+  filter(gender == "Female") %>%
+  filter(branch == "U.S. House of Representatives") 
+
+# There are a bunch of years that don't have any Female Officeholders, so
+# let's impute the value 0 for them. Start by determining what the total
+# number of years should look like
+house_full <- house_dates %>%
+  tidyr::complete(year = min(house_dates$year):max(house_dates$year),
+                  fill = list(gender = "Female",
+                              politicians = 0,
+                              branch = "U.S. House of Representatives"
+                  )
+  ) %>%
+  # Create a date column out of the year variable
+  mutate(date = as.Date(paste(year, "01", "01", sep = "-"))) 
+
+
+# Create a time series object from our date values. We'll start our time
+# series object from the first year (column) in our data frame and end at
+# the final year in our dataset.
+house_ts <- ts(data = house_full$politicians,
+                start = min(house_full$year),
+                end = max(house_full$year))
+
+# Use auto.arima to build a regression model with ARIMA
+arima_house <- auto.arima(house_ts)
+
+
+# Use the forecast function to build our predictions
+house_forecast <- forecast(arima_house,
+                            h = num_years # Number of years to forecast
+                           )
+
+# Let's structure these forecasted values in the same form as our dataset,
+# and add an indicator variable in
+forecast_full <- tibble(
+  politicians = house_forecast$mean,
+  year = seq(max(house_full$year) + 1, max(house_full$year) + num_years, 1),
+  gender = "Female",
+  branch = "U.S. House of Representatives",
+  date = as.Date(paste(year, "01", "01", sep = "-")),
+  period = "future" # indicator variable
+)
+
+house_future <- house_full %>%
+  mutate(period = "historic") %>%
+  bind_rows(forecast_full)
+
+```
+
+```{r house_arima_viz}
+house_parity <- min(house_future$year[house_future$politicians > 217])
+
+(House_ARIMA_Viz <- ggplot(house_future, aes(x = year, y = politicians, color = period)) +
+  geom_line(lwd = 2) +
+  # Add a reference line for when we achieve full parity
+  geom_vline(xintercept = house_parity,
+             color = "slateblue1",
+             linetype = "dashed") +
+  geom_hline(yintercept = 435/2,
+             color = "slateblue1",
+             linetype = "dashed") +
+  # Change the theme to classic
+  theme_classic() +
+  # Change the colors we're working with
+  scale_color_manual(name = "Time Period",
+                     values = c("slateblue", "gray"),
+                     labels = c("Predicted", "Actual")) +
+  # Let's change the names of the axes and title
+  xlab("Year") +
+  ylab("Number of Congresswomen") +
+  labs(title = "Number of Female U.S. House Reps over Time",
+       subtitle = paste("Data ranges from ", min(house_future$year), " to ", max(house_future$year), ". The dashed lines represent\nthe year in which each chamber achieves full gender parity.", sep = ""),
+       caption = "Data is gathered from the Eagleton Institute of Politics,\nCenter for American Women in Politics at\nhttps://cawpdata.rutgers.edu/") +
+  # format our title and subtitle
+  theme(plot.title = element_text(hjust = 0, color = "slateblue4"),
+        plot.subtitle = element_text(hjust = 0, color = "slateblue2", size = 10),
+        plot.caption = element_text(color = "dark gray", face = "italic", size = 10))
+)
+```
+
+Thus, according to the House ARIMA model built, the U.S. House of Representatives will first achieve full gender parity in the year **`r house_parity`**.
+
+Let's plot the Senate and House graphs side-by-side, just to get a better view of the whole picture.
+
+```{r congress_arima_viz}
+# Start by bringing the datasets together and imputing a new variable called
+# chamber
+congress_future <- house_future %>%
+  mutate(chamber = "U.S. House of Representatives",
+         parity_year = house_parity,
+         parity_number = 435/2) %>%
+  bind_rows(senate_future) %>%
+  mutate(chamber = if_else(is.na(chamber), "U.S. Senate", chamber),
+         parity_year = if_else(is.na(parity_year), senate_parity, parity_year),
+         parity_number = if_else(is.na(parity_number), 50, parity_number)) 
+
+# Let's plot our data
+(Congress_ARIMA_Viz <- ggplot(congress_future, aes(x = year, y = politicians, color = period)) +
+  geom_line(lwd = 1.5) +
+  # Facet wrap to get two graphs
+  facet_wrap(~ chamber, scales = "free_y") +
+  # Add a reference line for when we achieve full parity
+  geom_vline(data = congress_future,
+             aes(xintercept = parity_year),
+             color = "slateblue1",
+             linetype = "dashed") +
+  geom_hline(data = congress_future,
+             aes(yintercept = parity_number),
+             color = "slateblue1",
+             linetype = "dashed") +
+  # Change the theme to classic
+  theme_classic() +
+  # Change the colors we're working with
+  scale_color_manual(name = "Time Period",
+                     values = c("slateblue", "gray"),
+                     labels = c("Predicted", "Actual")) +
+  # Let's change the names of the axes and title
+  xlab("Year") +
+  ylab("Number of Congresswomen") +
+  labs(title = "Number of U.S. Congresswomen over Time",
+       subtitle = paste("Data ranges from ", min(house_future$year), " to ", max(house_future$year), ". The dashed lines represent\nthe year in which each chamber achieves full gender parity.", sep = ""),
+       caption = "Data is gathered from the Eagleton Institute of Politics,\nCenter for American Women in Politics at\nhttps://cawpdata.rutgers.edu/") +
+  # format our title and subtitle
+  theme(plot.title = element_text(hjust = 0, color = "slateblue4"),
+        plot.subtitle = element_text(hjust = 0, color = "slateblue2", size = 10),
+        plot.caption = element_text(color = "dark gray", face = "italic", size = 10))
+)
+```
+
+From these graphs, we can see that both ARIMA models took a rather linear approach, assuming a steady increase over time. This makes sense, because ARIMA usually looks for seasonality trends (which our data does NOT have) on top of the general trends (which our data does have). Obviously, this assumes that the rate of increase is steady over time and doesn't plateau
+as women in Congress hit a certain threshold. Assuming the rate of increase is generally linear, the **`r if_else(senate_parity > house_parity, "House", "Senate")`** will achieve full parity **`r if_else(house_parity > senate_parity, house_parity - senate_parity, senate_parity - house_parity)`** years before the **`r if_else(house_parity > senate_parity, "House", "Senate")`**.
+
+
+## Geographic Analysis  
+Next, we'll look into how the number of women holding certain political office varies based on location (state). This will help us understand if there are certain areas of the country where the phenomenon of women holding office is taking off, and others where it's lagging.
+
+First, let's take a look at our all-time leaders. Which states have had the most women state representatives in the past 120 years? To look at this, I've pulled state population data from the U.S. Census website to help normalize our results (so that California and New York, which are obviously larger states, don't disproportionately dominate the graph compared to smaller states, like Connecticut and Vermont).
+
+```{r racing_bar_chart_total_by_state}
+wp_state_yearly <- wp_selected %>%
+  # Get rid of D.C. for now
+  filter(grepl("State Legislative", level)) %>%
+  # Select our variables to analyze
+  select(id, level, state, year) %>%
+  # Group by level and state
+  group_by(level, state, year) %>%
+  # Count everything up!
+  summarise(num = n())
+
+wp_state_filled <- wp_state_yearly %>%
+  # Fill in missing data because there are a lot of years where a state had
+  # no female representatives, so those rows are just "missing" from the
+  # dataset, whereas I'd like them to display a '0'
+  tidyr::complete(year = min(wp_state_yearly$year):max(wp_state_yearly$year),
+                  nesting(level, state),
+                  fill = list(num = 0)
+  ) %>%
+  # Bring in our population data
+  left_join(census_data, by = c("year", "state")) %>%
+  # Get rid of anything before 1900 since we don't have data for that or
+  # anything after 2019
+  filter(year >= 1900 & year < 2020) %>%
+  # Create a new column that normalizes population and multiplies by 1000000
+  # Because some states have 0 population, deal with these accordingly
+  mutate(num_normalized = if_else(population == 0, 0, 1000000*num/population))
+
+# Now create a dataframe that holds the top 10 states and their values from every year
+top_10_by_state <- wp_state_filled %>%
+  group_by(year) %>%
+  mutate(rank = 1.0 * rank(-num_normalized),
+         num_normalized_rel = num_normalized/num_normalized[rank == 1],
+         num_label = paste0(" ", round(1.0 * num_normalized, 1))) %>%
+  group_by(state) %>%
+  filter(rank <= 10) %>%
+  ungroup() %>%
+  # Resort our dataset by year and num_normalized
+  arrange(year, desc(num_normalized))
+
+
+# Start by saving all of our graphs into one object
+static_bar_plot <- top_10_by_state %>%
+  ggplot(
+    aes(rank,
+        group = state_code)
+    ) +
+  geom_tile(aes(y = num_normalized/2,
+                height = num_normalized,
+                width = 0.9),
+            fill = "slateblue") +
+  # Create our labels for states, our x-axis
+  geom_text(aes(y = 0,
+                label = paste(state_code, " ")),
+            vjust = 0.2,
+            hjust = 1,
+            size = 4) +
+  # Create our labels for values
+  geom_label(aes(y = num_normalized,
+                 label = num_label),
+             hjust = 0,
+             size = 4) +
+  coord_flip(clip = "off", expand = FALSE) +
+  scale_y_continuous(labels = scales::comma) +
+  scale_x_reverse() +
+  guides(color = FALSE, fill = FALSE) +
+  # Remove all of the theming so the plot looks simple enough
+  theme(axis.line=element_blank(),
+        axis.text.x=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks=element_blank(),
+        axis.title.x=element_blank(),
+        axis.title.y=element_blank(),
+        legend.position="none",
+        panel.background=element_blank(),
+        panel.border=element_blank(),
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        panel.grid.major.x = element_line( size=.1, color="grey" ),
+        panel.grid.minor.x = element_line( size=.1, color="grey" ),
+        plot.title = element_text(hjust = 0, color = "slateblue4"),
+        plot.subtitle = element_text(hjust = 0, color = "slateblue2", size = 10),
+        plot.caption = element_text(color = "dark gray", size = 10, face = "italic"),
+        plot.background=element_blank(),
+        plot.margin = margin(2, 2, 2, 4, "cm"))
+
+# Now use gganimate to stitch together all of the static plots
+animated_bar_plot <- static_bar_plot +
+  # Split by a discrete variable, year, and animate between the different states
+  transition_states(states = year,
+                    transition_length = 4,
+                    state_length = 2) +
+  # Provides a view as if the background lines are moving as the animation is progressing
+  view_follow(fixed_x = T,
+              fixed_y = T) +
+  # ease_aes("bounce-in") +
+  labs(title = "Top 10 States by Number of Female State Legislators\nYear: {closest_state}",
+       subtitle = "Data is normalized by state per 1,000,000 Population (i.e. 50 means\nfor every 1,000,000 people, there are 50 women who were State Legislators",
+       caption = "Data is gathered from the Eagleton Institute of Politics,\nCenter for American Women in Politics at\nhttps://cawpdata.rutgers.edu/"
+       )
+
+
+# Now render the plot
+gganimate::animate(
+  plot = animated_bar_plot,
+  # A larger number of frames seems to slow down our viz
+  nframes = 600,
+  fps = 20,
+  width = 800,
+  height = 600)
+```
+
+
+```{r animated_map_total_by_state}
+### Map visualization
+# Read in the states data, which includes the longitude/latitude points I need
+main_states <- map_data("state")
+# Change the structure of the main_states object
+main_states <- main_states %>%
+  as_tibble() %>%
+  # Make all of the states lower case to match
+  mutate(region = str_to_title(region)) %>%
+  # Rename state variable to match what's in the other datasets, for joining purposes
+  rename(state = region)
+
+# Join our state longitude/latitude data into our main dataframe
+wp_state_joined <- wp_state_filled %>% 
+  merge(main_states, by = "state") %>% 
+  as_tibble()
+
+
+### Animated maps
+# Let's turn our bar charts into maps. We'll use our original data frame so 
+# get more than the top 10 states (ideally we get all)
+state_map <-  ggplot(data = wp_state_joined,
+                     aes(x = long,
+                         y = lat)) +
+  geom_polygon(aes(group = group, 
+                   fill = num_normalized),
+               color = "black") +
+  # Note: We can only use the albers projection if we're looking at just the U.S.
+  # If we wanted to expand across the Atlantic, we'd have to use Mercator
+  coord_map(projection = "albers", lat0 = 45.5, lat1 = 29.5) +
+  guides(fill = FALSE) +
+  # Remove all of the theming so the plot looks simple enough
+  theme(axis.line=element_blank(),
+        axis.text.x=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks=element_blank(),
+        axis.title.x=element_blank(),
+        axis.title.y=element_blank(),
+        # legend.position="none",
+        panel.background=element_blank(),
+        panel.border=element_blank(),
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        plot.title = element_text(hjust = 0, color = "slateblue4"),
+        plot.subtitle = element_text(hjust = 0, color = "slateblue2", size = 10),
+        plot.caption = element_text(color = "dark gray", size = 10, face = "italic"),
+        plot.background=element_blank()) +
+  # Change the fill scale
+  guides(fill = guide_legend(title = "Scale", reverse = T)) +
+  scale_fill_continuous(low = "white",
+                        high = "slateblue",
+                        limits = c(0, 100))
+
+# Now use gganimate to stitch together all of the static plots
+animated_map_plot <- state_map +
+  # Split by a discrete variable, year, and animate between the different states
+  transition_states(states = year,
+                    transition_length = 4,
+                    state_length = 2) +
+  labs(title = "Number of Female State Legislators by State\nYear: {closest_state}",
+       subtitle = "Data is normalized by state per 1,000,000 Population (i.e. 50 means for every\n1,000,000 people, there are 50 women who were State Legislators",
+       caption = "Data is gathered from the Eagleton Institute of Politics,\nCenter for American Women in Politics at\nhttps://cawpdata.rutgers.edu/"
+  )
+
+# Now render the plot
+gganimate::animate(
+  plot = animated_map_plot,
+  # A larger number of frames seems to slow down our viz
+  nframes = 600,
+  fps = 20,
+  width = 800,
+  height = 600)
+
+
+```
+
+From this we can see that certain states dominate consistently throughout the past century, specifically New Hampshire, Vermont, and Connecticut. Let's look at the same data in map-form to give us a better sense of the geographic trends.
+
+
+### Conclusion  
+Thanks for reading! I hope you were able to learn a bit more about the data behind women in political office across the United States. If you felt like the article was educational, interesting, or if you just want to support me, feel free to follow me on any social media platform (all are listed as icons on the homepage of my website) and stay tuned for the next post. If you have ideas on public policy/political topics that could use some data expertise, please send me your suggestions -- the more ideas, the better!
+
+
+### Additional Resources  
+The original blog post can be found here:  
+
+Interested in seeing my original code? Go to my GitHub repository here:  
+**https://github.com/jschulberg/Women-in-Politics**  
+
+Interested in learning more about this subject or the Center for American Women and Politics? Go to:  
+**https://cawp.rutgers.edu/facts/milestones-for-women/**  
+
+Interested in seeing the Eagleton Institue of Politics, Center for American Women and Politics Women Elected Officials Database? Go to:  
+**https://cawpdata.rutgers.edu/**   
+
+
