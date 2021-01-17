@@ -559,7 +559,8 @@ house_full <- house_dates %>%
                   )
   ) %>%
   # Create a date column out of the year variable
-  mutate(date = as.Date(paste(year, "01", "01", sep = "-"))) %>%
+  mutate(date = as.Date(paste(year, "01", "01", sep = "-")),
+         period = "historic") %>%
   print()
 
 
@@ -591,7 +592,6 @@ forecast_full <- tibble(
 )
 
 house_future <- house_full %>%
-  mutate(period = "historic") %>%
   bind_rows(forecast_full) %>%
   print()
 
@@ -687,6 +687,62 @@ ggsave(here::here("Viz", "Congress_ARIMA_Viz.jpg"))
 # as women in Congress hit a certain threshold. Assuming the rate of increase
 # is generally linear, the Senate will achieve full parity before the House.
 
+# Because a linear approach is unrealistic (eventually, the threshold of women
+# in each chamber will eventually exceed 100%) in the long run, let's try to fit
+# something that caps out at 100%. For that reason, I'd like to fit a logistic
+# regression curve, which uses a Sigmoidal function (S-shaped) to make its estimate.
+p_load(drc)
+
+# If we just go ahead and fit the logistic regression based on what we have now,
+# It won't put the upper bound at 100% female. Let's make a daring assumption
+# that Congress will eventually be 100% female.
+# house_100 <- tibble(
+#   year = seq(max(house_full$year) + 102, max(house_full$year) + 103),
+#   # year = max(house_full$year) + 102,
+#   politicians = 435
+# ) %>%
+#   bind_rows(house_full) %>%
+#   arrange(year) %>%
+#   print()
+
+log_fit <- drm(politicians ~ year, data = house_full, fct = L.3(), type = "continuous")
+pander(summary(log_fit))
+
+# Predict out our future values for 100 years out!
+new_house_data <- expand.grid(year = seq(max(house_full$year) + 1, max(house_full$year) + 101))
+log_house_predictions <- predict(log_fit, newdata = new_house_data)
+
+# Bring our results (first column) in
+log_house_full <- new_house_data %>%
+  as_tibble() %>%
+  bind_cols(politicians = log_house_predictions) %>%
+  mutate(period = "predicted") %>%
+  bind_rows(house_full) %>%
+  arrange(year) %>%
+  tidyr::fill(gender, branch) %>%
+  mutate(date = paste(year, "01", "01", sep = "-")) %>%
+  print()
+
+# Viz time!
+log_house_full %>%
+  ggplot(aes(x = year, y = politicians, color = period)) +
+  geom_line(lwd = 1.5) +
+  # Change the theme to classic
+  theme_classic() +
+  # Change the colors we're working with
+  scale_color_manual(name = "Time Period",
+                     values = c("gray", "slateblue"),
+                     labels = c("Actual", "Predicted")) +
+  # Let's change the names of the axes and title
+  xlab("Year") +
+  ylab("Number of Congresswomen") +
+  labs(title = "Number of U.S. Congresswomen over Time",
+       subtitle = paste("Data ranges from ", min(log_house_full$year), " to ", max(log_house_full$year), ". The dashed lines represent\nthe year in which each chamber achieves full gender parity.", sep = ""),
+       caption = "Data is gathered from the Eagleton Institute of Politics,\nCenter for American Women in Politics at\nhttps://cawpdata.rutgers.edu/") +
+  # format our title and subtitle
+  theme(plot.title = element_text(hjust = 0, color = "slateblue4"),
+        plot.subtitle = element_text(hjust = 0, color = "slateblue2", size = 10),
+        plot.caption = element_text(color = "dark gray", face = "italic", size = 10))
 
 
 ########################################################################
