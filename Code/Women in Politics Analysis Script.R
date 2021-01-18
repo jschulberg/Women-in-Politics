@@ -709,11 +709,11 @@ house_100 <- tibble(
   print()
 
 log_fit_house <- drm(politicians ~ year, data = house_100, fct = L.3(), type = "continuous")
-pander(summary(log_fit))
+pander(summary(log_fit_house))
 
 # Predict out our future values for 100 years out!
 new_house_data <- expand.grid(year = seq(max(house_full$year) + 1, max(house_full$year) + num_years - 1))
-log_house_predictions <- predict(log_fit, newdata = new_house_data)
+log_house_predictions <- predict(log_fit_house, newdata = new_house_data)
 
 # Bring our results (first column) in
 log_house_full <- new_house_data %>%
@@ -766,7 +766,7 @@ log_congress_full <- log_house_full %>%
          )
 
 # Viz time!
-log_congress_full %>%
+(Congress_Logistic_Viz <- log_congress_full %>%
   ggplot(aes(x = year, y = politicians, color = period)) +
   geom_line(lwd = 1.5) +
   facet_wrap(~ chamber, scales = "free_y") +
@@ -795,14 +795,15 @@ log_congress_full %>%
   theme(plot.title = element_text(hjust = 0, color = "slateblue4"),
         plot.subtitle = element_text(hjust = 0, color = "slateblue2", size = 10),
         plot.caption = element_text(color = "dark gray", face = "italic", size = 10))
-
+)
+ggsave(here::here("Viz", "Congress_Logistic_Viz.jpg"))
 
 # Let's see what this looks like against the ARIMA estimates we made
 both_models_full <- log_congress_full %>%
   bind_rows(congress_future) %>%
   mutate(model = if_else(is.na(model), "ARIMA", model))
 
-both_models_full %>%
+(Congress_Both_Predictive_Models <- both_models_full %>%
   # log_senate_full %>%
   ggplot(aes(x = year, y = politicians, color = period)) +
   geom_line(lwd = 1.5) +
@@ -832,6 +833,8 @@ both_models_full %>%
   theme(plot.title = element_text(hjust = 0, color = "slateblue4"),
         plot.subtitle = element_text(hjust = 0, color = "slateblue2", size = 10),
         plot.caption = element_text(color = "dark gray", face = "italic", size = 10))
+)
+ggsave(here::here("Viz", "Congress_Both_Predictive_Models.jpg"))
 
 
 
