@@ -379,7 +379,7 @@ senate_composition <- wp_selected %>%
          # Make it a factor
          gender = factor(gender, levels = c("Male", "Female")),
          # Let's create one column to identify this dataset as Senate
-         branch = "U.S. Senate") %>%
+         chamber = "U.S. Senate") %>%
   print()
 
 # Let's do the same thing, but for U.S. House of Representatives, which has
@@ -407,7 +407,7 @@ house_composition <- wp_selected %>%
          # Make it a factor
          gender = factor(gender, levels = c("Male", "Female")),
          # Let's create one column to identify this dataset as Senate
-         branch = "U.S. House of Representatives") %>%
+         chamber = "U.S. House of Representatives") %>%
   print()
 
 # Bind our two datasets together
@@ -418,7 +418,7 @@ congress_composition <- bind_rows(house_composition, senate_composition)
   # Let's make it a column graph and change the color
   geom_area(alpha = .9, color = "gray") +
   # Let's create separate graphs for House vs. Senate
-  facet_wrap(~ branch, scales = "free_y") +
+  facet_wrap(~ chamber, scales = "free_y") +
   # Change the theme to classic
   theme_classic() +
   # Change the colors we're working with
@@ -456,7 +456,7 @@ ggsave(here::here("Viz", "US_Congressmembers_by_Gender.jpg"))
 
 senate_dates <- congress_composition %>%
   filter(gender == "Female") %>%
-  filter(branch == "U.S. Senate") %>%
+  filter(chamber == "U.S. Senate") %>%
   print()
 
 # There are a bunch of years that don't have any female politicians, so
@@ -466,11 +466,12 @@ senate_full <- senate_dates %>%
   tidyr::complete(year = min(senate_dates$year):max(senate_dates$year),
                   fill = list(gender = "Female",
                               politicians = 0,
-                              branch = "U.S. Senate"
+                              chamber = "U.S. Senate"
                   )
   ) %>%
   # Create a date column out of the year variable
-  mutate(date = as.Date(paste(year, "01", "01", sep = "-"))) %>%
+  mutate(date = as.Date(paste(year, "01", "01", sep = "-")),
+         period = "historic") %>%
   print()
 
 
@@ -497,13 +498,12 @@ forecast_full <- tibble(
   politicians = senate_forecast$mean,
   year = seq(max(senate_full$year) + 1, max(senate_full$year) + num_years, 1),
   gender = "Female",
-  branch = "U.S. Senate",
+  chamber = "U.S. Senate",
   date = as.Date(paste(year, "01", "01", sep = "-")),
   period = "future" # indicator variable
 )
 
 senate_future <- senate_full %>%
-  mutate(period = "historic") %>%
   bind_rows(forecast_full) %>%
   print()
 
@@ -545,7 +545,7 @@ ggsave(here::here("Viz", "Senate_ARIMA_Viz.jpg"))
 ## Let's now do the same thing for the House
 house_dates <- congress_composition %>%
   filter(gender == "Female") %>%
-  filter(branch == "U.S. House of Representatives") %>%
+  filter(chamber == "U.S. House of Representatives") %>%
   print()
 
 # There are a bunch of years that don't have any female politicians, so
@@ -555,7 +555,7 @@ house_full <- house_dates %>%
   tidyr::complete(year = min(house_dates$year):max(house_dates$year),
                   fill = list(gender = "Female",
                               politicians = 0,
-                              branch = "U.S. House of Representatives"
+                              chamber = "U.S. House of Representatives"
                   )
   ) %>%
   # Create a date column out of the year variable
@@ -586,7 +586,7 @@ forecast_full <- tibble(
   politicians = house_forecast$mean,
   year = seq(max(house_full$year) + 1, max(house_full$year) + num_years, 1),
   gender = "Female",
-  branch = "U.S. House of Representatives",
+  chamber = "U.S. House of Representatives",
   date = as.Date(paste(year, "01", "01", sep = "-")),
   period = "future" # indicator variable
 )
@@ -687,6 +687,10 @@ ggsave(here::here("Viz", "Congress_ARIMA_Viz.jpg"))
 # as women in Congress hit a certain threshold. Assuming the rate of increase
 # is generally linear, the Senate will achieve full parity before the House.
 
+
+########################################################################
+## Logistic Model ------------------------------------------------------
+########################################################################
 # Because a linear approach is unrealistic (eventually, the threshold of women
 # in each chamber will eventually exceed 100%) in the long run, let's try to fit
 # something that caps out at 100%. For that reason, I'd like to fit a logistic
@@ -696,37 +700,85 @@ p_load(drc)
 # If we just go ahead and fit the logistic regression based on what we have now,
 # It won't put the upper bound at 100% female. Let's make a daring assumption
 # that Congress will eventually be 100% female.
-# house_100 <- tibble(
-#   year = seq(max(house_full$year) + 102, max(house_full$year) + 103),
-#   # year = max(house_full$year) + 102,
-#   politicians = 435
-# ) %>%
-#   bind_rows(house_full) %>%
-#   arrange(year) %>%
-#   print()
+house_100 <- tibble(
+  year = max(house_full$year) + num_years,
+  politicians = 435
+) %>%
+  bind_rows(house_full) %>%
+  arrange(year) %>%
+  print()
 
-log_fit <- drm(politicians ~ year, data = house_full, fct = L.3(), type = "continuous")
+log_fit_house <- drm(politicians ~ year, data = house_100, fct = L.3(), type = "continuous")
 pander(summary(log_fit))
 
 # Predict out our future values for 100 years out!
-new_house_data <- expand.grid(year = seq(max(house_full$year) + 1, max(house_full$year) + 101))
+new_house_data <- expand.grid(year = seq(max(house_full$year) + 1, max(house_full$year) + num_years - 1))
 log_house_predictions <- predict(log_fit, newdata = new_house_data)
 
 # Bring our results (first column) in
 log_house_full <- new_house_data %>%
   as_tibble() %>%
   bind_cols(politicians = log_house_predictions) %>%
-  mutate(period = "predicted") %>%
-  bind_rows(house_full) %>%
+  mutate(period = "future") %>%
+  bind_rows(house_100) %>%
   arrange(year) %>%
-  tidyr::fill(gender, branch) %>%
-  mutate(date = paste(year, "01", "01", sep = "-")) %>%
+  tidyr::fill(gender, chamber) %>%
+  mutate(date = as.Date(paste(year, "01", "01", sep = "-"))) %>%
   print()
 
+
+# Now let's do the same thing for the Senate
+senate_100 <- tibble(
+  year = max(senate_full$year) + num_years,
+  politicians = 100
+) %>%
+  bind_rows(senate_full) %>%
+  arrange(year) %>%
+  print()
+
+log_fit_senate <- drm(politicians ~ year, data = senate_100, fct = L.3(), type = "continuous")
+pander(summary(log_fit_senate))
+
+# Predict out our future values for 100 years out!
+new_senate_data <- expand.grid(year = seq(max(senate_full$year) + 1, max(senate_full$year) + num_years - 1))
+log_senate_predictions <- predict(log_fit_senate, newdata = new_senate_data)
+
+# Bring our results (first column) in
+log_senate_full <- new_senate_data %>%
+  as_tibble() %>%
+  bind_cols(politicians = log_senate_predictions) %>%
+  mutate(period = "future") %>%
+  bind_rows(senate_100) %>%
+  arrange(year) %>%
+  tidyr::fill(gender, chamber) %>%
+  mutate(date = as.Date(paste(year, "01", "01", sep = "-"))) %>%
+  print()
+
+log_congress_full <- log_house_full %>%
+  bind_rows(log_senate_full) %>%
+  mutate(parity_year = if_else(chamber == "U.S. House of Representatives",
+                                   min(log_house_full$year[log_house_full$politicians > 435/2]),
+                                   min(log_senate_full$year[log_senate_full$politicians > 100/2])),
+         parity_number = if_else(chamber == "U.S. House of Representatives",
+                               min(log_house_full$politicians[log_house_full$politicians > 435/2]),
+                               min(log_senate_full$politicians[log_senate_full$politicians > 100/2])),
+         model = "Logistic"
+         )
+
 # Viz time!
-log_house_full %>%
+log_congress_full %>%
   ggplot(aes(x = year, y = politicians, color = period)) +
   geom_line(lwd = 1.5) +
+  facet_wrap(~ chamber, scales = "free_y") +
+  # Add a reference line for when we achieve full parity
+  geom_vline(data = log_congress_full,
+             aes(xintercept = parity_year),
+             color = "slateblue1",
+             linetype = "dashed") +
+  geom_hline(data = log_congress_full,
+             aes(yintercept = parity_number),
+             color = "slateblue1",
+             linetype = "dashed") +
   # Change the theme to classic
   theme_classic() +
   # Change the colors we're working with
@@ -737,12 +789,50 @@ log_house_full %>%
   xlab("Year") +
   ylab("Number of Congresswomen") +
   labs(title = "Number of U.S. Congresswomen over Time",
-       subtitle = paste("Data ranges from ", min(log_house_full$year), " to ", max(log_house_full$year), ". The dashed lines represent\nthe year in which each chamber achieves full gender parity.", sep = ""),
+       subtitle = paste("Data ranges from ", min(log_senate_full$year), " to ", max(log_senate_full$year), ". The dashed lines represent\nthe year in which each chamber achieves full gender parity.", sep = ""),
        caption = "Data is gathered from the Eagleton Institute of Politics,\nCenter for American Women in Politics at\nhttps://cawpdata.rutgers.edu/") +
   # format our title and subtitle
   theme(plot.title = element_text(hjust = 0, color = "slateblue4"),
         plot.subtitle = element_text(hjust = 0, color = "slateblue2", size = 10),
         plot.caption = element_text(color = "dark gray", face = "italic", size = 10))
+
+
+# Let's see what this looks like against the ARIMA estimates we made
+both_models_full <- log_congress_full %>%
+  bind_rows(congress_future) %>%
+  mutate(model = if_else(is.na(model), "ARIMA", model))
+
+both_models_full %>%
+  # log_senate_full %>%
+  ggplot(aes(x = year, y = politicians, color = period)) +
+  geom_line(lwd = 1.5) +
+  facet_wrap(~ model + chamber, scales = "free_y") +
+  # Add a reference line for when we achieve full parity
+  geom_vline(data = both_models_full,
+             aes(xintercept = parity_year),
+             color = "slateblue1",
+             linetype = "dashed") +
+  geom_hline(data = both_models_full,
+             aes(yintercept = parity_number),
+             color = "slateblue1",
+             linetype = "dashed") +
+  # Change the theme to classic
+  theme_classic() +
+  # Change the colors we're working with
+  scale_color_manual(name = "Time Period",
+                     values = c("slateblue", "gray"),
+                     labels = c("Predicted", "Actual")) +
+  # Let's change the names of the axes and title
+  xlab("Year") +
+  ylab("Number of Congresswomen") +
+  labs(title = "Number of U.S. Congresswomen over Time",
+       subtitle = paste("Data ranges from ", min(both_models_full$year), " to ", max(both_models_full$year), ". The dashed lines represent\nthe year in which each chamber achieves full gender parity.", sep = ""),
+       caption = "Data is gathered from the Eagleton Institute of Politics,\nCenter for American Women in Politics at\nhttps://cawpdata.rutgers.edu/") +
+  # format our title and subtitle
+  theme(plot.title = element_text(hjust = 0, color = "slateblue4"),
+        plot.subtitle = element_text(hjust = 0, color = "slateblue2", size = 10),
+        plot.caption = element_text(color = "dark gray", face = "italic", size = 10))
+
 
 
 ########################################################################
